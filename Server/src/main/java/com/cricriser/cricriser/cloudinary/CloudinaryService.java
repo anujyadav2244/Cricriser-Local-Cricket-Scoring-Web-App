@@ -23,7 +23,7 @@ public class CloudinaryService {
             Map uploadResult = cloudinary.uploader().upload(file.getBytes(),
                     ObjectUtils.asMap("folder", folder));
             return uploadResult.get("secure_url").toString();
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw new IOException("Failed to upload file to Cloudinary: " + e.getMessage());
         }
     }
@@ -32,7 +32,7 @@ public class CloudinaryService {
         try {
             String publicId = extractPublicIdFromUrl(url);
             cloudinary.uploader().destroy(publicId, ObjectUtils.emptyMap());
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw new IOException("Failed to delete file from Cloudinary: " + e.getMessage());
         }
     }

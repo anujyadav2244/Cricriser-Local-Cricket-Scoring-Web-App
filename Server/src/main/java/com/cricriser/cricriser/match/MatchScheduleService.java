@@ -2,6 +2,7 @@ package com.cricriser.cricriser.match;
 
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.cricriser.cricriser.league.League;
@@ -9,16 +10,21 @@ import com.cricriser.cricriser.league.LeagueRepository;
 import com.cricriser.cricriser.security.JwtBlacklistService;
 import com.cricriser.cricriser.security.JwtUtil;
 
-import lombok.RequiredArgsConstructor;
 
 @Service
-@RequiredArgsConstructor
 public class MatchScheduleService {
 
-    private final MatchScheduleRepository repo;
-    private final LeagueRepository leagueRepository;
-    private final JwtUtil jwtUtil;
-    private final JwtBlacklistService blacklistService;
+    @Autowired
+    private  MatchScheduleRepository repo;
+
+    @Autowired
+    private LeagueRepository leagueRepository;
+
+    @Autowired 
+    private JwtUtil jwtUtil;
+
+    @Autowired
+    private JwtBlacklistService blacklistService;
 
     // ================= MANUAL MATCH CREATION =================
     // Only use this if admin wants to create a match manually after league
@@ -31,7 +37,7 @@ public class MatchScheduleService {
                 .orElseThrow(() -> new Exception("League not found"));
 
         // Check if logged-in user is the league admin
-        if (!league.getAdminId().equals(adminId))
+        if (!league.getAdminId().equalsIgnoreCase(adminId))
             throw new Exception("You are not authorized to schedule matches for this league");
 
         // Validate that teams exist in the league
@@ -44,7 +50,7 @@ public class MatchScheduleService {
             throw new Exception(match.getTeam1() + " is not part of this league!");
         if (!team2Exists)
             throw new Exception(match.getTeam2() + " is not part of this league!");
-        if (match.getTeam1().equals(match.getTeam2()))
+        if (match.getTeam1().equalsIgnoreCase(match.getTeam2()))
             throw new Exception("Team1 and Team2 cannot be the same!");
 
         // Default status
@@ -79,15 +85,15 @@ public class MatchScheduleService {
                 .orElseThrow(() -> new Exception("League not found"));
 
         // Verify league belongs to admin
-        if (!league.getAdminId().equals(adminId)) {
+        if (!league.getAdminId().equalsIgnoreCase(adminId)) {
             throw new Exception("You are not authorized to update matches for this league");
         }
 
         // ✅ Ensure both teams belong to league
         boolean team1Exists = league.getTeams().stream()
-                .anyMatch(t -> t.startsWith(updatedMatch.getTeam1() + ":") || t.equals(updatedMatch.getTeam1()));
+                .anyMatch(t -> t.startsWith(updatedMatch.getTeam1() + ":") || t.equalsIgnoreCase(updatedMatch.getTeam1()));
         boolean team2Exists = league.getTeams().stream()
-                .anyMatch(t -> t.startsWith(updatedMatch.getTeam2() + ":") || t.equals(updatedMatch.getTeam2()));
+                .anyMatch(t -> t.startsWith(updatedMatch.getTeam2() + ":") || t.equalsIgnoreCase(updatedMatch.getTeam2()));
 
          if (!team1Exists) {
             throw new Exception(updatedMatch.getTeam1() + " must belong to the league");
@@ -99,9 +105,9 @@ public class MatchScheduleService {
             throw new Exception("Both teams must belong to the league");
         }
 
-        // ✅ Check that existing match teams are fixed
-        if (!existing.getTeam1().equals(updatedMatch.getTeam1()) ||
-                !existing.getTeam2().equals(updatedMatch.getTeam2())) {
+        // Check that existing match teams are fixed
+        if (!existing.getTeam1().equalsIgnoreCase(updatedMatch.getTeam1()) ||
+                !existing.getTeam2().equalsIgnoreCase(updatedMatch.getTeam2())) {
             throw new Exception("You cannot change the teams of this match. Teams are fixed for matchId: " + id);
         }        
        
@@ -130,7 +136,7 @@ public class MatchScheduleService {
         League league = leagueRepository.findById(match.getLeagueId())
                 .orElseThrow(() -> new Exception("League not found"));
 
-        if (!league.getAdminId().equals(adminId))
+        if (!league.getAdminId().equalsIgnoreCase(adminId))
             throw new Exception("You are not authorized to delete matches for this league");
 
         repo.delete(match);

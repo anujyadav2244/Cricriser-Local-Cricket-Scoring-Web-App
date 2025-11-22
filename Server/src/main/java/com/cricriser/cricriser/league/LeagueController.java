@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -53,28 +54,43 @@ public class LeagueController {
         }
     }
 
-    @PutMapping("/update/{id}")
+    @PutMapping(value = "/update/{id}", consumes = { "application/json", "multipart/form-data" })
     public ResponseEntity<?> updateLeague(
             @PathVariable String id,
-            @RequestPart("league") League league,
-            @RequestPart(value = "logo", required = false) MultipartFile logoFile) {
+            @RequestPart(value = "leagueJson", required = false) String leagueJsonString,
+            @RequestPart(value = "logo", required = false) MultipartFile logoFile,
+            @RequestBody(required = false) League leagueJsonObject) {
+
         try {
-            return ResponseEntity.ok(leagueService.updateLeague(id, league, logoFile));
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("message", e.getMessage()));
+            League leagueData;
+
+            // CASE 1 → If form-data is used with leagueJson (String)
+            if (leagueJsonString != null) {
+                ObjectMapper mapper = new ObjectMapper();
+                leagueData = mapper.readValue(leagueJsonString, League.class);
+            }
+            // CASE 2 → Raw JSON Body directly maps to League object
+            else if (leagueJsonObject != null) {
+                leagueData = leagueJsonObject;
+            } else {
+                return ResponseEntity.badRequest().body("No league data provided!");
+            }
+
+            // Call common service method
+            League updated = leagueService.updateLeague(id, leagueData, logoFile);
+
+            return ResponseEntity.ok(updated);
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("message", e.getMessage()));
         }
     }
 
     @DeleteMapping("/delete/{id}")
-    public ResponseEntity<?> deleteLeague(@PathVariable String id) {
-        try {
-            leagueService.deleteLeague(id);
-            return ResponseEntity.ok(Map.of("message", "League and all related matches deleted successfully!"));
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("message", e.getMessage()));
-        }
+    public ResponseEntity<String> deleteLeague(@PathVariable("id") String leagueId) {
+        leagueService.deleteLeague(leagueId);
+        return ResponseEntity.ok("League and its related teams deleted successfully.");
     }
 
     @DeleteMapping("/delete-all")
@@ -103,11 +119,6 @@ public class LeagueController {
                 .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(Map.of("message", "League not found")));
-    }
-
-    @GetMapping("/my-leagues")
-    public ResponseEntity<?> getMyLeagues() {
-        return ResponseEntity.ok(leagueService.getLeaguesByAdmin());
     }
 
     @GetMapping

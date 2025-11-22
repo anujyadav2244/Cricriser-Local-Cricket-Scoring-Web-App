@@ -1,9 +1,11 @@
 package com.cricriser.cricriser.league;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -17,6 +19,8 @@ import org.springframework.web.multipart.MultipartFile;
 import com.cricriser.cricriser.cloudinary.CloudinaryService;
 import com.cricriser.cricriser.match.MatchSchedule;
 import com.cricriser.cricriser.match.MatchScheduleRepository;
+import com.cricriser.cricriser.match.MatchScoreRepository;
+import com.cricriser.cricriser.points.PointsTableRepository;
 import com.cricriser.cricriser.team.Team;
 import com.cricriser.cricriser.team.TeamRepository;
 
@@ -30,14 +34,21 @@ public class LeagueService {
     private TeamRepository teamRepository;
 
     @Autowired
-    private MatchScheduleRepository matchRepository;
+    private MatchScheduleRepository matchScheduleRepository;
+
+    @Autowired
+    private MatchScoreRepository matchScoreRepository;
 
     @Autowired
     private CloudinaryService cloudinaryService;
 
+    @Autowired
+    private PointsTableRepository pointsTableRepository;
+
     private String getLoggedInAdminId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getPrincipal() == null || auth.getPrincipal().toString().equals("anonymousUser")) {
+        if (auth == null || auth.getPrincipal() == null
+                || auth.getPrincipal().toString().equalsIgnoreCase("anonymousUser")) {
             throw new RuntimeException("Unauthorized! Please log in.");
         }
         return auth.getPrincipal().toString();
@@ -67,30 +78,37 @@ public class LeagueService {
             try {
                 String logoUrl = cloudinaryService.uploadFile(logoFile, "leagues");
                 league.setLogoUrl(logoUrl);
-            } catch (Exception e) {
+            } catch (IOException e) {
                 throw new RuntimeException("League logo upload failed: " + e.getMessage());
             }
         }
 
         League savedLeague = leagueRepository.save(league);
 
-        List<MatchSchedule> matches = switch (league.getLeagueFormatType()) {
-            case "SINGLE_ROUND_ROBIN" -> generateRoundRobinMatches(savedLeague, false);
-            case "DOUBLE_ROUND_ROBIN" -> generateRoundRobinMatches(savedLeague, true);
-            case "GROUP" -> generateGroupFormatMatches(savedLeague);
-            default -> throw new RuntimeException(
-                    "Invalid leagueFormatType! Choose SINGLE ROUND ROBIN, DOUBLE ROUND ROBIN, or GROUP.");
-        };
-
-        int lastMatchNo = matches.isEmpty() ? 1 : matches.get(matches.size() - 1).getMatchNo() + 1;
+        List<MatchSchedule> matches;
+        String formatType = league.getLeagueFormatType();
+        switch (formatType) {
+            case "SINGLE_ROUND_ROBIN":
+                matches = generateRoundRobinMatches(savedLeague, false);
+                break;
+            case "DOUBLE_ROUND_ROBIN":
+                matches = generateRoundRobinMatches(savedLeague, true);
+                break;
+            case "GROUP":
+                matches = generateGroupFormatMatches(savedLeague);
+                break;
+            default:
+                throw new RuntimeException(
+                        "Invalid leagueFormatType! Choose SINGLE ROUND ROBIN, DOUBLE ROUND ROBIN, or GROUP.");
+        }
 
         if (includeKnockouts) {
-            matches.addAll(generateKnockoutMatches(savedLeague, includeEliminator, lastMatchNo));
+            matches.addAll(generateKnockoutMatches(savedLeague, includeEliminator));
         }
 
         assignMatchDates(savedLeague, matches);
-        assignMatchNumbersAndTypes(matches, league.getLeagueFormatType(), includeEliminator, includeKnockouts);
-        matchRepository.saveAll(matches);
+        assignMatchNumbersAndTypes(matches);
+        matchScheduleRepository.saveAll(matches);
 
         savedLeague.setNoOfMatches(matches.size());
         leagueRepository.save(savedLeague);
@@ -98,135 +116,139 @@ public class LeagueService {
         return matches;
     }
 
-    public League updateLeague(String leagueId, League updatedLeague, MultipartFile logoFile) {
+    public League updateLeague(String leagueId, League updatedLeague, MultipartFile logoFile) throws Exception {
+
         String adminId = getLoggedInAdminId();
 
-        return leagueRepository.findById(leagueId)
-                .map(existingLeague -> {
-                    if (!existingLeague.getAdminId().equals(adminId)) {
-                        throw new RuntimeException("This league does not belong to you!");
-                    }
+        League existingLeague = leagueRepository.findById(leagueId)
+                .orElseThrow(() -> new RuntimeException("League not found"));
 
-                    if (updatedLeague.getName() != null && !updatedLeague.getName().isEmpty()) {
-                        leagueRepository.findByName(updatedLeague.getName())
-                                .filter(l -> !l.getId().equals(leagueId))
-                                .ifPresent(l -> {
-                                    throw new RuntimeException("Another league with this name already exists!");
-                                });
-                        existingLeague.setName(updatedLeague.getName());
-                    }
+        if (!existingLeague.getAdminId().equalsIgnoreCase(adminId)) {
+            throw new RuntimeException("You are not authorized to update this league!");
+        }
 
-                    if (updatedLeague.getNoOfTeams() > 0)
-                        existingLeague.setNoOfTeams(updatedLeague.getNoOfTeams());
+        // ---------- UPDATE FIELDS ----------
+        if (updatedLeague.getName() != null && !updatedLeague.getName().isEmpty()) {
+            leagueRepository.findByName(updatedLeague.getName())
+                    .filter(l -> !l.getId().equalsIgnoreCase(leagueId))
+                    .ifPresent(l -> {
+                        throw new RuntimeException("Another league with this name already exists!");
+                    });
+            existingLeague.setName(updatedLeague.getName());
+        }
 
-                    if (updatedLeague.getTeams() != null && !updatedLeague.getTeams().isEmpty()) {
-                        existingLeague.setTeams(updatedLeague.getTeams());
-                    }
+        if (updatedLeague.getNoOfTeams() > 0)
+            existingLeague.setNoOfTeams(updatedLeague.getNoOfTeams());
 
-                    if (updatedLeague.getNoOfMatches() > 0)
-                        existingLeague.setNoOfMatches(updatedLeague.getNoOfMatches());
+        if (updatedLeague.getTeams() != null && !updatedLeague.getTeams().isEmpty())
+            existingLeague.setTeams(updatedLeague.getTeams());
 
-                    if (updatedLeague.getStartDate() != null)
-                        existingLeague.setStartDate(updatedLeague.getStartDate());
+        if (updatedLeague.getNoOfMatches() > 0)
+            existingLeague.setNoOfMatches(updatedLeague.getNoOfMatches());
 
-                    if (updatedLeague.getEndDate() != null)
-                        existingLeague.setEndDate(updatedLeague.getEndDate());
+        if (updatedLeague.getStartDate() != null)
+            existingLeague.setStartDate(updatedLeague.getStartDate());
 
-                    if (updatedLeague.getVenue() != null && !updatedLeague.getVenue().isEmpty())
-                        existingLeague.setVenue(updatedLeague.getVenue());
+        if (updatedLeague.getEndDate() != null)
+            existingLeague.setEndDate(updatedLeague.getEndDate());
 
-                    if (updatedLeague.getLeagueFormat() != null && !updatedLeague.getLeagueFormat().isEmpty())
-                        existingLeague.setLeagueFormat(updatedLeague.getLeagueFormat());
+        if (updatedLeague.getVenue() != null && !updatedLeague.getVenue().isEmpty())
+            existingLeague.setVenue(updatedLeague.getVenue());
 
-                    if (updatedLeague.getUmpires() != null && !updatedLeague.getUmpires().isEmpty())
-                        existingLeague.setUmpires(updatedLeague.getUmpires());
+        if (updatedLeague.getLeagueFormat() != null && !updatedLeague.getLeagueFormat().isEmpty())
+            existingLeague.setLeagueFormat(updatedLeague.getLeagueFormat());
 
-                    if (logoFile != null && !logoFile.isEmpty()) {
-                        try {
-                            String logoUrl = cloudinaryService.uploadFile(logoFile, "leagues");
-                            existingLeague.setLogoUrl(logoUrl);
-                        } catch (Exception e) {
-                            throw new RuntimeException("League logo upload failed: " + e.getMessage());
-                        }
-                    }
+        if (updatedLeague.getUmpires() != null && !updatedLeague.getUmpires().isEmpty())
+            existingLeague.setUmpires(updatedLeague.getUmpires());
 
-                    return leagueRepository.save(existingLeague);
-                })
-                .orElseThrow(() -> new RuntimeException("League not found with ID: " + leagueId));
+        // ---------- UPDATE LOGO ----------
+        if (logoFile != null && !logoFile.isEmpty()) {
+            // Delete old logo
+            if (existingLeague.getLogoUrl() != null && !existingLeague.getLogoUrl().isEmpty()) {
+                cloudinaryService.deleteFile(existingLeague.getLogoUrl());
+            }
+
+            String logoUrl = cloudinaryService.uploadFile(logoFile, "leagues");
+            existingLeague.setLogoUrl(logoUrl);
+        }
+
+        return leagueRepository.save(existingLeague);
     }
 
     private List<MatchSchedule> generateRoundRobinMatches(League league, boolean doubleRound) {
-        List<String> teamNames = new ArrayList<>();
-        for (String t : league.getTeams())
-            teamNames.add(t.split(":")[0]); // extract only team name
 
-        List<MatchSchedule> matches = new ArrayList<>();
-        int n = teamNames.size();
+        List<String> teams = league.getTeams().stream()
+                .toList();
 
-        // If odd, add dummy team "BYE"
+        int n = teams.size();
+
+        // If odd add a dummy
         if (n % 2 != 0) {
-            teamNames.add("BYE");
+            teams = new ArrayList<>(teams);
+            teams.add("BYE");
             n++;
         }
 
+        List<String> rotating = new ArrayList<>(teams);
+        List<MatchSchedule> matches = new ArrayList<>();
+
         int totalRounds = n - 1;
         int matchesPerRound = n / 2;
-        int matchCounter = 1;
 
         for (int round = 0; round < totalRounds; round++) {
+
             for (int i = 0; i < matchesPerRound; i++) {
-                String team1 = teamNames.get(i);
-                String team2 = teamNames.get(n - 1 - i);
 
-                if (!team1.equals("BYE") && !team2.equals("BYE")) {
-                    MatchSchedule match = new MatchSchedule();
-                    match.setLeagueId(league.getId());
-                    match.setTeam1(team1);
-                    match.setTeam2(team2);
-                    match.setStatus("Scheduled");
-                    match.setMatchType("LEAGUE");
-                    match.setMatchNo(matchCounter++);
-                    matches.add(match);
+                String team1 = rotating.get(i);
+                String team2 = rotating.get(n - 1 - i);
 
-                    // For double round robin, reverse home/away
+                if (!team1.equalsIgnoreCase("BYE") && !team2.equalsIgnoreCase("BYE")) {
+
+                    // NORMAL MATCH
+                    MatchSchedule m = new MatchSchedule();
+                    m.setLeagueId(league.getId());
+                    m.setTeam1(team1);
+                    m.setTeam2(team2);
+                    m.setStatus("Scheduled");
+                    m.setMatchType("LEAGUE");
+                    matches.add(m);
+
+                    // REVERSE FIXTURE - only for double RR
                     if (doubleRound) {
-                        MatchSchedule reverse = new MatchSchedule();
-                        reverse.setLeagueId(league.getId());
-                        reverse.setTeam1(team2);
-                        reverse.setTeam2(team1);
-                        reverse.setStatus("Scheduled");
-                        reverse.setMatchType("LEAGUE");
-                        reverse.setMatchNo(matchCounter++);
-                        matches.add(reverse);
+                        MatchSchedule r = new MatchSchedule();
+                        r.setLeagueId(league.getId());
+                        r.setTeam1(team2);
+                        r.setTeam2(team1);
+                        r.setStatus("Scheduled");
+                        r.setMatchType("LEAGUE");
+                        matches.add(r);
                     }
                 }
             }
 
-            // Rotate teams except the first one
-            List<String> rotated = new ArrayList<>();
-            rotated.add(teamNames.get(0)); // keep first fixed
-            rotated.add(teamNames.get(n - 1));
-            for (int i = 1; i < n - 1; i++) {
-                rotated.add(teamNames.get(i));
-            }
-            teamNames = rotated;
+            // ---- CORRECT ROTATION ----
+            List<String> next = new ArrayList<>(rotating);
+
+            // Move last team to index 1 (circle rotation)
+            String last = next.remove(next.size() - 1);
+            next.add(1, last);
+
+            rotating = next;
         }
 
         return matches;
     }
 
     private List<MatchSchedule> generateGroupFormatMatches(League league) {
-        List<String> teamNames = new ArrayList<>();
-        for (String t : league.getTeams())
-            teamNames.add(t.split(":")[0]);
+        List<String> teams = league.getTeams();
 
         List<String> groupA = new ArrayList<>();
         List<String> groupB = new ArrayList<>();
-        for (int i = 0; i < teamNames.size(); i++) {
+        for (int i = 0; i < teams.size(); i++) {
             if (i % 2 == 0)
-                groupA.add(teamNames.get(i));
+                groupA.add(teams.get(i));
             else
-                groupB.add(teamNames.get(i));
+                groupB.add(teams.get(i));
         }
 
         List<MatchSchedule> matches = new ArrayList<>();
@@ -251,10 +273,9 @@ public class LeagueService {
         return matches;
     }
 
-    private List<MatchSchedule> generateKnockoutMatches(League league, boolean includeEliminator, int startingMatchNo) {
+    private List<MatchSchedule> generateKnockoutMatches(League league, boolean includeEliminator) {
         List<MatchSchedule> knockouts = new ArrayList<>();
-        int matchCounter = startingMatchNo;
-
+        
         if (includeEliminator) {
             MatchSchedule eliminator = new MatchSchedule();
             eliminator.setLeagueId(league.getId());
@@ -263,7 +284,6 @@ public class LeagueService {
             eliminator.setStatus("Scheduled");
             eliminator.setVenue(league.getVenue());
             eliminator.setMatchType("ELIMINATOR");
-            eliminator.setMatchNo(matchCounter++);
             knockouts.add(eliminator);
         }
 
@@ -274,7 +294,6 @@ public class LeagueService {
         semi1.setStatus("Scheduled");
         semi1.setVenue(league.getVenue());
         semi1.setMatchType("SEMI FINAL 1");
-        semi1.setMatchNo(matchCounter++);
         knockouts.add(semi1);
 
         MatchSchedule semi2 = new MatchSchedule();
@@ -284,7 +303,6 @@ public class LeagueService {
         semi2.setStatus("Scheduled");
         semi2.setVenue(league.getVenue());
         semi2.setMatchType("SEMI FINAL 2");
-        semi2.setMatchNo(matchCounter++);
         knockouts.add(semi2);
 
         MatchSchedule finalMatch = new MatchSchedule();
@@ -294,7 +312,6 @@ public class LeagueService {
         finalMatch.setStatus("Scheduled");
         finalMatch.setVenue(league.getVenue());
         finalMatch.setMatchType("FINAL");
-        finalMatch.setMatchNo(matchCounter++);
         knockouts.add(finalMatch);
 
         return knockouts;
@@ -318,38 +335,55 @@ public class LeagueService {
         }
     }
 
-    private void assignMatchNumbersAndTypes(List<MatchSchedule> matches, String leagueFormatType,
-            boolean includeEliminator, boolean includeKnockouts) {
-        int matchNo = 1;
+    private void assignMatchNumbersAndTypes(
+        List<MatchSchedule> matches) {
 
-        for (MatchSchedule match : matches) {
-            if (match.getMatchType() == null || match.getMatchType().equals("LEAGUE")) {
-                match.setMatchNo(matchNo++);
-                match.setMatchType("LEAGUE");
-            }
+    // 🌟 1. FIX MATCH TYPE FIRST (LEAGUE vs KNOCKOUT)
+    for (MatchSchedule match : matches) {
+
+        if (match.getMatchType() == null) {
+            match.setMatchType("LEAGUE");
         }
 
-        if (!includeKnockouts)
-            return;
+        if (match.getMatchType().equalsIgnoreCase("LEAGUE")) continue;
 
-        int knockoutIndex = 1;
-        for (MatchSchedule match : matches) {
-            if (!match.getMatchType().equals("LEAGUE")) {
-                match.setMatchNo(matchNo++);
-
-                if (match.getTeam1().startsWith("Loser") || match.getTeam2().startsWith("Loser")) {
-                    match.setMatchType("ELIMINATOR");
-                } else if (match.getTeam1().startsWith("Winner") && match.getTeam2().startsWith("Winner")) {
-                    switch (knockoutIndex) {
-                        case 1 -> match.setMatchType("SEMI_FINAL_1");
-                        case 2 -> match.setMatchType("SEMI_FINAL_2");
-                        default -> match.setMatchType("FINAL");
-                    }
-                    knockoutIndex++;
-                }
-            }
+        // Knockout matches
+        if (match.getTeam1().startsWith("Loser") || match.getTeam2().startsWith("Loser")) {
+            match.setMatchType("ELIMINATOR");
+        } else if (match.getMatchType().contains("SEMI")) {
+            match.setMatchType(match.getMatchType().toUpperCase());
+        } else if (match.getTeam1().startsWith("WinnerSemi") && match.getTeam2().startsWith("WinnerSemi")) {
+            match.setMatchType("FINAL");
         }
     }
+
+    // 🌟 2. SORT MATCHES IN CORRECT ORDER
+    // LEAGUE FIRST → ELIMINATOR → SEMI FINAL 1 → SEMI FINAL 2 → FINAL
+    matches.sort(Comparator.comparing((MatchSchedule m) -> {
+        switch (m.getMatchType().toUpperCase()) {
+            case "LEAGUE":
+                return 1;
+            case "ELIMINATOR":
+                return 2;
+            case "SEMI FINAL 1":
+            case "SEMI_FINAL_1":
+                return 3;
+            case "SEMI FINAL 2":
+            case "SEMI_FINAL_2":
+                return 4;
+            case "FINAL":
+                return 5;
+            default:
+                return 99;
+        }
+    }));
+
+    // 🌟 3. ASSIGN MATCH NUMBERS IN ORDER
+    int matchNo = 1;
+    for (MatchSchedule match : matches) {
+        match.setMatchNo(matchNo++);
+    }
+}
 
     public void deleteLeague(String leagueId) {
         String adminId = getLoggedInAdminId();
@@ -357,46 +391,57 @@ public class LeagueService {
         League league = leagueRepository.findById(leagueId)
                 .orElseThrow(() -> new RuntimeException("League not found with ID: " + leagueId));
 
-        if (!league.getAdminId().equals(adminId)) {
+        if (!league.getAdminId().equalsIgnoreCase(adminId)) {
             throw new RuntimeException("This league does not belong to you!");
         }
 
-        List<String> teamIds = league.getTeams().stream()
-                .map(team -> {
-                    String[] parts = team.split(":");
-                    return parts.length > 1 ? parts[1] : parts[0]; // if no ":", take the whole string
-                })
-                .toList();
+        // 1. Delete teams
+        List<Team> teams = new ArrayList<>();
 
-        List<Team> teams = teamRepository.findAllById(teamIds);
-        for (Team team : teams) {
-            if (team.getLogoUrl() != null && !team.getLogoUrl().isEmpty()) {
-                try {
-                    cloudinaryService.deleteFile(team.getLogoUrl());
-                } catch (Exception e) {
-                    System.err.println("Failed to delete team logo for " + team.getName() + ": " + e.getMessage());
+        for (String t : league.getTeams()) {
+            String[] parts = t.split(":");
+            String teamName = parts[0];
+            String teamId = parts.length > 1 ? parts[1] : null;
+
+            Team team = null;
+
+            if (teamId != null)
+                team = teamRepository.findById(teamId).orElse(null);
+
+            if (team == null)
+                team = teamRepository.findByName(teamName);
+
+            if (team != null) {
+                if (team.getLogoUrl() != null) {
+                    try {
+                        cloudinaryService.deleteFile(team.getLogoUrl());
+                    } catch (IOException ignored) {
+                    }
                 }
+                teams.add(team);
             }
         }
+
         teamRepository.deleteAll(teams);
 
-        // Delete league logo
-        if (league.getLogoUrl() != null && !league.getLogoUrl().isEmpty()) {
+        // 2. Delete matches
+        matchScheduleRepository.deleteByLeagueId(leagueId);
+        matchScoreRepository.deleteByLeagueId(leagueId);
+
+        // 3. Delete league logo
+        if (league.getLogoUrl() != null) {
             try {
                 cloudinaryService.deleteFile(league.getLogoUrl());
-            } catch (Exception e) {
-                System.err.println("Failed to delete league logo: " + e.getMessage());
+            } catch (IOException ignored) {
             }
         }
 
-        // Delete matches
-        List<MatchSchedule> matches = matchRepository.findByLeagueId(leagueId);
-        if (!matches.isEmpty()) {
-            matchRepository.deleteAll(matches);
-        }
+        // 4. Clear league teams list
+        league.setTeams(new ArrayList<>());
+        leagueRepository.save(league);
 
-        // Delete league
-        leagueRepository.delete(league);
+        // 5. Delete league
+        leagueRepository.deleteById(leagueId);
     }
 
     public void deleteAllLeagues() {
@@ -408,43 +453,64 @@ public class LeagueService {
         }
 
         for (League league : leagues) {
-            // Delete teams and their logos
+
+            String leagueId = league.getId();
+
+            // ==================== 1. DELETE TEAMS ====================
             List<String> teamIds = league.getTeams().stream()
-                    .map(team -> {
-                        String[] parts = team.split(":");
-                        return parts.length > 1 ? parts[1] : parts[0]; // if no ":", take the whole string
-                    })
+                    .filter(id -> id != null)
                     .toList();
 
-            List<Team> teams = teamRepository.findAllById(teamIds);
-            for (Team team : teams) {
-                if (team.getLogoUrl() != null && !team.getLogoUrl().isEmpty()) {
-                    try {
-                        cloudinaryService.deleteFile(team.getLogoUrl());
-                    } catch (Exception e) {
-                        System.err.println("Failed to delete team logo for " + team.getName() + ": " + e.getMessage());
+            if (!teamIds.isEmpty()) {
+                List<Team> teams = teamRepository.findAllById(teamIds);
+
+                // Delete team logos from cloudinary
+                for (Team team : teams) {
+                    if (team.getLogoUrl() != null && !team.getLogoUrl().isEmpty()) {
+                        try {
+                            cloudinaryService.deleteFile(team.getLogoUrl());
+                        } catch (IOException e) {
+                            System.err.println("Team logo delete failed: " + e.getMessage());
+                        }
                     }
                 }
-            }
-            teamRepository.deleteAll(teams);
 
-            // Delete league logo
+                teamRepository.deleteAll(teams);
+            }
+
+            // ==================== 2. DELETE MATCH SCHEDULES ====================
+            try {
+                matchScheduleRepository.deleteByLeagueId(leagueId);
+            } catch (Exception e) {
+                System.err.println("Match schedule delete failed: " + e.getMessage());
+            }
+
+            // ==================== 3. DELETE MATCH SCORES ====================
+            try {
+                matchScoreRepository.deleteByLeagueId(leagueId);
+            } catch (Exception e) {
+                System.err.println("Match score delete failed: " + e.getMessage());
+            }
+
+            // ==================== 4. DELETE POINTS TABLE ====================
+            try {
+                pointsTableRepository.deleteByLeagueId(leagueId);
+            } catch (Exception e) {
+                System.err.println("Points table delete failed: " + e.getMessage());
+            }
+
+            // ==================== 5. DELETE LEAGUE LOGO ====================
             if (league.getLogoUrl() != null && !league.getLogoUrl().isEmpty()) {
                 try {
                     cloudinaryService.deleteFile(league.getLogoUrl());
-                } catch (Exception e) {
-                    System.err.println("Failed to delete league logo: " + e.getMessage());
+                } catch (IOException e) {
+                    e.getMessage();
                 }
             }
 
-            // Delete matches
-            List<MatchSchedule> matches = matchRepository.findByLeagueId(league.getId());
-            if (!matches.isEmpty())
-                matchRepository.deleteAll(matches);
+            // ==================== 6. DELETE LEAGUE ITSELF ====================
+            leagueRepository.deleteById(leagueId);
         }
-
-        // Delete leagues
-        leagueRepository.deleteAll(leagues);
     }
 
     public Optional<League> getLeagueById(String leagueId) {

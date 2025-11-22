@@ -86,17 +86,6 @@ public class TeamController {
         }
     }
 
-    // ======= GET TEAM BY NAME =======
-    @GetMapping("/name/{name}")
-    public ResponseEntity<?> getTeamByName(@PathVariable String name) {
-        try {
-            Team team = teamService.getTeamByName(name);
-            return ResponseEntity.ok(team);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("message", e.getMessage()));
-        }
-    }
 
     // ======= GET ALL TEAMS =======
     @GetMapping("/get-all")

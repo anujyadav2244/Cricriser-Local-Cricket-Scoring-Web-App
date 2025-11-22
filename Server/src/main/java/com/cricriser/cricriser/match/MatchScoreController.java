@@ -1,40 +1,83 @@
 package com.cricriser.cricriser.match;
 
 import java.util.List;
-import org.springframework.web.bind.annotation.*;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/scores")
+@RequestMapping("/api/match/score")
+@CrossOrigin(origins = "*")
 public class MatchScoreController {
 
-    private final MatchScoreService service;
+    @Autowired
+    private MatchScoreService matchScoreService;
 
-    public MatchScoreController(MatchScoreService service) {
-        this.service = service;
+    // ================= ADD MATCH SCORE (first time) =================
+    @PostMapping("/add")
+    public ResponseEntity<?> addScore(@RequestBody MatchScore score) {
+        try {
+            MatchScore saved = matchScoreService.addScore(score);
+            return ResponseEntity.ok(saved);
+        } catch (RuntimeException ex) {
+            return ResponseEntity.badRequest().body(ex.getMessage());
+        }
     }
 
-    @PostMapping("/create")
-    public MatchScore createScore(@RequestBody MatchScore score) {
-        return service.createScore(score);
+    // ================= UPDATE MATCH SCORE =================
+    @PutMapping("/update/{matchId}")
+    public ResponseEntity<?> updateScore(@PathVariable String matchId, @RequestBody MatchScore updatedScore) {
+        try {
+            updatedScore.setMatchId(matchId);
+            MatchScore saved = matchScoreService.updateScore(updatedScore);
+            return ResponseEntity.ok(saved);
+        } catch (RuntimeException ex) {
+            return ResponseEntity.badRequest().body(ex.getMessage());
+        }
     }
-
-    @GetMapping
-    public List<MatchScore> getAllScores() {
-        return service.getAllScores();
-    }
+    // GET SCORE BY MATCH ID
 
     @GetMapping("/{matchId}")
-    public MatchScore getScoreByMatchId(@PathVariable String matchId) {
-        return service.getScoreByMatchId(matchId);
+    public ResponseEntity<?> getByMatchId(@PathVariable String matchId) {
+        MatchScore score = matchScoreService.getMatchScoreByMatchId(matchId);
+        if (score == null)
+            return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(score);
     }
 
-    @PutMapping("/{id}")
-    public MatchScore updateScore(@PathVariable String id, @RequestBody MatchScore updatedScore) {
-        return service.updateScore(id, updatedScore);
+    // GET ALL
+
+    @GetMapping("/all")
+    public ResponseEntity<List<MatchScore>> allScores() {
+        return ResponseEntity.ok(matchScoreService.getAllScores());
     }
 
-    @DeleteMapping("/{id}")
-    public void deleteScore(@PathVariable String id) {
-        service.deleteScore(id);
+    // DELETE
+
+    @DeleteMapping("/delete/{id}")
+    public ResponseEntity<?> deleteScore(@PathVariable String id) {
+        matchScoreService.deleteScoreById(id);
+        return ResponseEntity.ok("Match score deleted");
     }
+
+    // ================= DELETE ALL MATCH SCORES =================
+    @DeleteMapping("/delete/all")
+    public ResponseEntity<?> deleteAllScores() {
+        try {
+            matchScoreService.deleteAllScores();
+            return ResponseEntity.ok("All match scores deleted successfully.");
+        } catch (RuntimeException ex) {
+            return ResponseEntity.badRequest().body(ex.getMessage());
+        }
+    }
+
 }

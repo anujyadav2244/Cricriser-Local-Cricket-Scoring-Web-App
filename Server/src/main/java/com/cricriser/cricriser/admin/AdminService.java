@@ -55,7 +55,7 @@ public class AdminService {
 
         if (admin.getVerified())
             return "User already verified!";
-        if (!otp.equals(admin.getOtp()))
+        if (!otp.equalsIgnoreCase(admin.getOtp()))
             throw new RuntimeException("Invalid OTP!");
         if (admin.getOtpGeneratedAt().plusMinutes(10).isBefore(LocalDateTime.now())) {
             throw new RuntimeException("OTP expired!");
@@ -116,7 +116,7 @@ public class AdminService {
         Admin admin = adminRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found!"));
 
-        if (!otp.equals(admin.getOtp()))
+        if (!otp.equalsIgnoreCase(admin.getOtp()))
             throw new RuntimeException("Invalid OTP!");
         if (admin.getOtpGeneratedAt().plusMinutes(10).isBefore(LocalDateTime.now())) {
             throw new RuntimeException("OTP expired!");
