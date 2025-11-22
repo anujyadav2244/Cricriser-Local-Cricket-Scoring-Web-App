@@ -17,21 +17,31 @@ public class MatchScore {
 
     @Id
     private String id;
-    private String matchId;  // Reference to MatchSchedule
+
+    private String matchId; // Reference to MatchSchedule
+    private String leagueId;     // Reference to League
+
+    private String team1Id;
+    private int team1Runs;
+    private int team1Wickets;
+    private double team1Overs;
+
+    private String team2Id;
+    private int team2Runs;
+    private int team2Wickets;
+    private double team2Overs;
 
     private String tossWinner;
-    private String tossDecision;
-    private String matchStatus; // e.g., "In Progress", "Completed" 
-    private String matchWinner;
-    private String result;
+    private String tossDecision; // "Bat" or "Bowl"
+
+    private String matchStatus; // "Not Started", "In Progress", "Completed"
+
+    private String matchWinner; // auto-calculated
+    
+    private String result;      // auto-calculated
     private String playerOfTheMatch;
 
-    private int team1Runs;
-    private int team2Runs;
-    private int team1Wickets;
-    private int team2Wickets;
-    private float team1Overs;
-    private float team2Overs;
+    
 
     private List<String> team1PlayingXI; // Player IDs
     private List<String> team2PlayingXI; // Player IDs
