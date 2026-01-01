@@ -1,4 +1,4 @@
-package com.cricriser.cricriser.match;
+package com.cricriser.cricriser.match.matchscheduling;
 
 import java.util.List;
 
@@ -8,7 +8,8 @@ public interface MatchScheduleRepository extends MongoRepository<MatchSchedule, 
     List<MatchSchedule> findByLeagueId(String leagueId);
     void deleteLeagueById(String leagueId);
     void deleteByLeagueId(String leagueId);
-    
+    long countByLeagueId(String leagueId);
+
 
 
 }

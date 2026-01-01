@@ -5,7 +5,12 @@ import java.util.List;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 public interface TeamRepository extends MongoRepository<Team, String> {
-    Team findByName(String name);
+
+    // Get all teams in a league
     List<Team> findByLeagueId(String leagueId);
-    
+
+    List<Team> findById(List<String> teamIds);
+    // Check duplicate team name ONLY inside a league
+    boolean existsByLeagueIdAndNameIgnoreCase(String leagueId, String name);
+
 }

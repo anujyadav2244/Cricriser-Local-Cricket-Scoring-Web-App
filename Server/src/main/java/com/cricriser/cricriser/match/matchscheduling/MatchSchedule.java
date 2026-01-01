@@ -1,4 +1,4 @@
-package com.cricriser.cricriser.match;
+package com.cricriser.cricriser.match.matchscheduling;
 
 import java.util.Date;
 
@@ -14,8 +14,8 @@ public class MatchSchedule {
     private String id;
     private String leagueId;
 
-    private String team1;
-    private String team2;
+    private String team1Id;
+    private String team2Id;
 
     private int matchNo;         // Match sequence number
     private String matchType;    // "LEAGUE", "ELIMINATOR", "SEMI_FINAL_1", "SEMI_FINAL_2", "FINAL"

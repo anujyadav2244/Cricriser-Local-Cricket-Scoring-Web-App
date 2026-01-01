@@ -1,8 +1,10 @@
-package com.cricriser.cricriser.admin;
+package com.cricriser.cricriser.player;
 
 import java.time.LocalDateTime;
+
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -10,11 +12,11 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-@Document(collection = "admin")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class Admin {
+@Document(collection = "player")
+public class Player {
 
     @Id
     private String id;
@@ -29,17 +31,29 @@ public class Admin {
     @NotBlank(message = "Password is required")
     @Size(min = 6, message = "Password must be at least 6 characters")
     private String password;
-
-    @NotBlank(message = "Old password is required")
-    @Size(min = 6, message = "Old Password must be at least 6 characters")
+    @NotBlank(message = "oldPassword is required")
+    @Size(min = 6, message = "oldPassword must be at least 6 characters")
     private String oldPassword;
-
-    @NotBlank(message = "New password is required")
-    @Size(min = 6, message = "New Password must be at least 6 characters")
+    @NotBlank(message = "newPassword is required")
+    @Size(min = 6, message = "newPassword must be at least 6 characters")
     private String newPassword;
 
     private String otp;
     private LocalDateTime otpGeneratedAt;
     private LocalDateTime createdAt = LocalDateTime.now();
-    private Boolean verified = false;
+    private Boolean isVerified = false;
+
+    // Profile
+    private String role;
+    private String battingStyle;
+    private String bowlingType;
+    private String bowlingStyle;
+
+    // Only 1 team at a time
+    private String currentTeamId;
+
+    // Active league details
+    private String activeLeagueId;
+    private LocalDateTime leagueStartDate;
+    private LocalDateTime leagueEndDate;
 }

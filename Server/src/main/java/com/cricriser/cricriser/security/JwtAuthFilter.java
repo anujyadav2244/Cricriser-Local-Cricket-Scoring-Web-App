@@ -1,6 +1,7 @@
 package com.cricriser.cricriser.security;
 
 import java.io.IOException;
+import java.util.List;
 
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -25,54 +26,83 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
+    protected void doFilterInternal(
+            HttpServletRequest request,
             HttpServletResponse response,
-            FilterChain filterChain) throws ServletException, IOException {
+            FilterChain filterChain)
+            throws ServletException, IOException {
 
-        String authHeader = request.getHeader("Authorization");
+        // Allow preflight
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            response.setStatus(HttpServletResponse.SC_OK);
+            return;
+        }
+
         String path = request.getRequestURI();
 
-        // Skip auth for public endpoints
-        if (path.startsWith("/api/auth/signup") ||
-                path.startsWith("/api/auth/login") ||
-                path.startsWith("/api/auth/verify-otp")) {
+        // Public routes
+        if (isPublicPath(path)) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
+        String authHeader = request.getHeader("Authorization");
 
-            // Check if token is blacklisted
-            if (jwtBlacklistService.isBlacklisted(token)) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.getWriter().write("Token invalid or logged out. Please login again.");
-                return;
-            }
-
-            try {
-                String email = jwtUtil.extractEmail(token);
-
-                // will throw ExpiredJwtException or JwtException if invalid
-                jwtUtil.validateToken(token);
-
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(email, null,
-                        null);
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authToken);
-
-            } catch (io.jsonwebtoken.ExpiredJwtException e) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.getWriter().write("Token expired. Please log in again.");
-                return;
-            } catch (io.jsonwebtoken.JwtException e) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.getWriter().write("Invalid token. Please log in again.");
-                return;
-            }
-
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("""
+            { "error": "Authorization token missing" }
+        """);
+            return;
         }
 
-        filterChain.doFilter(request, response);
+        String token = authHeader.substring(7);
+
+        // Blacklist check
+        if (jwtBlacklistService.isBlacklisted(token)) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("""
+            { "error": "You are logged out. Please login again." }
+        """);
+            return;
+        }
+
+        try {
+            // 🔑 Parse JWT ONLY ONCE
+            String email = jwtUtil.extractEmail(token);
+
+            UsernamePasswordAuthenticationToken authToken
+                    = new UsernamePasswordAuthenticationToken(email, null, List.of());
+
+            authToken.setDetails(
+                    new WebAuthenticationDetailsSource().buildDetails(request));
+
+            SecurityContextHolder.getContext().setAuthentication(authToken);
+
+            filterChain.doFilter(request, response);
+
+        } catch (RuntimeException e) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("""
+            { "error": "Session expired. Please login again." }
+        """);
+        }
+    }
+
+    //  PUBLIC URL HELPER
+    private boolean isPublicPath(String path) {
+        return path.startsWith("/api/admin/signup")
+                || path.startsWith("/api/admin/login")
+                || path.startsWith("/api/admin/verify-otp")
+                || path.startsWith("/api/admin/forgot-password")
+                || path.startsWith("/api/admin/verify-forgot-otp")
+                || path.startsWith("/api/player/signup")
+                || path.startsWith("/api/player/login")
+                || path.startsWith("/api/player/forgot-password")
+                || path.startsWith("/api/player/verify-otp")
+                || path.startsWith("/api/player/verify-forgot-otp");
     }
 }

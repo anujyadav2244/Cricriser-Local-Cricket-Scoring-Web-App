@@ -2,7 +2,6 @@ package com.cricriser.cricriser.admin;
 
 import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Random;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,32 +30,40 @@ public class AdminService {
     @Autowired
     private JwtBlacklistService jwtBlacklistService;
 
-    // ----------------- SIGNUP -----------------
+    // ===================== SIGNUP =====================
     public String signup(Admin admin) {
+
         if (adminRepository.findByEmail(admin.getEmail()).isPresent()) {
             throw new RuntimeException("Email already registered!");
         }
 
         String otp = String.format("%06d", new Random().nextInt(1_000_000));
-        admin.setOtp(otp);
+
+        admin.setOtp(passwordEncoder.encode(otp));
         admin.setOtpGeneratedAt(LocalDateTime.now());
         admin.setVerified(false);
         admin.setPassword(passwordEncoder.encode(admin.getPassword()));
 
         emailService.sendOtpEmail(admin.getEmail(), otp);
         adminRepository.save(admin);
-        return "OTP sent to email!";
+
+        return "OTP sent successfully to " + admin.getEmail();
     }
 
-    // ----------------- VERIFY SIGNUP OTP -----------------
+    // ===================== VERIFY SIGNUP OTP =====================
     public String verifyOtp(String email, String otp) {
-        Admin admin = adminRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
 
-        if (admin.getVerified())
-            return "User already verified!";
-        if (!otp.equalsIgnoreCase(admin.getOtp()))
+        Admin admin = adminRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (admin.getVerified()) {
+            return "Email already verified!";
+        }
+
+        if (!passwordEncoder.matches(otp, admin.getOtp())) {
             throw new RuntimeException("Invalid OTP!");
+        }
+
         if (admin.getOtpGeneratedAt().plusMinutes(10).isBefore(LocalDateTime.now())) {
             throw new RuntimeException("OTP expired!");
         }
@@ -66,60 +73,60 @@ public class AdminService {
         admin.setOtpGeneratedAt(null);
         adminRepository.save(admin);
 
-        return "Email verified successfully!";
+        return "Email verified successfully: " + admin.getEmail();
     }
 
-    // ----------------- LOGIN -----------------
+    // ===================== LOGIN =====================
     public Map<String, String> login(String email, String password) {
-        // Check if admin exists
-        Optional<Admin> optionalAdmin = adminRepository.findByEmail(email);
-        if (optionalAdmin.isEmpty()) {
-            throw new RuntimeException("No account found with this email");
-        }
 
-        Admin admin = optionalAdmin.get();
+        Admin admin = adminRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // Check if email is verified
         if (!admin.getVerified()) {
-            throw new RuntimeException("Email not verified. Please verify your email first.");
+            throw new RuntimeException("Email not verified");
         }
 
-        // Check if password matches
         if (!passwordEncoder.matches(password, admin.getPassword())) {
-            throw new RuntimeException("Incorrect password");
+            throw new RuntimeException("Wrong password");
         }
 
-        // Generate JWT token
         String token = jwtUtil.generateToken(email);
 
         return Map.of(
                 "token", token,
-                "userId", String.valueOf(admin.getId()));
+                "userId", admin.getId()
+        );
     }
 
-    // ----------------- FORGOT PASSWORD -----------------
+    // ===================== FORGOT PASSWORD =====================
     public String forgotPassword(String email) {
+
         Admin admin = adminRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
+                .orElseThrow(() -> new RuntimeException("Email not found"));
 
         String otp = String.format("%06d", new Random().nextInt(1_000_000));
-        admin.setOtp(otp);
+
+        admin.setOtp(passwordEncoder.encode(otp));
         admin.setOtpGeneratedAt(LocalDateTime.now());
         adminRepository.save(admin);
 
         emailService.sendOtpEmail(email, otp);
-        return "OTP sent to email!";
+
+        return "OTP sent to " + email;
     }
 
-    // ----------------- VERIFY FORGOT OTP -----------------
+    // ===================== VERIFY FORGOT PASSWORD OTP =====================
     public String verifyForgotOtp(String email, String otp, String newPassword) {
-        Admin admin = adminRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
 
-        if (!otp.equalsIgnoreCase(admin.getOtp()))
-            throw new RuntimeException("Invalid OTP!");
+        Admin admin = adminRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!passwordEncoder.matches(otp, admin.getOtp())) {
+            throw new RuntimeException("Invalid OTP");
+        }
+
         if (admin.getOtpGeneratedAt().plusMinutes(10).isBefore(LocalDateTime.now())) {
-            throw new RuntimeException("OTP expired!");
+            throw new RuntimeException("OTP expired");
         }
 
         admin.setPassword(passwordEncoder.encode(newPassword));
@@ -127,59 +134,64 @@ public class AdminService {
         admin.setOtpGeneratedAt(null);
         adminRepository.save(admin);
 
-        return "Password updated successfully!";
+        return "Password updated successfully";
     }
 
-    // ----------------- RESET PASSWORD (AUTH REQUIRED) -----------------
+    // ===================== RESET PASSWORD =====================
     public String resetPassword(String email, String oldPassword, String newPassword) {
-        Admin admin = adminRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
 
-        if (!passwordEncoder.matches(oldPassword, admin.getPassword()))
-            throw new RuntimeException("Current password is incorrect!");
+        Admin admin = adminRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!passwordEncoder.matches(oldPassword, admin.getPassword())) {
+            throw new RuntimeException("Incorrect old password");
+        }
 
         admin.setPassword(passwordEncoder.encode(newPassword));
         adminRepository.save(admin);
 
-        return "Password updated successfully!";
+        return "Password changed successfully";
     }
 
-    // ----------------- HELPER: GET EMAIL FROM JWT -----------------
+    // ===================== HELPERS =====================
     public String getEmailFromToken(String token) {
+
         if (jwtBlacklistService.isBlacklisted(token)) {
-            throw new RuntimeException("Token is blacklisted");
+            throw new RuntimeException("Session expired. Please login again.");
         }
         return jwtUtil.extractEmail(token);
     }
 
-    // ----------------- GET CURRENT USER -----------------
     public Admin getCurrentUser(String email) {
+
         return adminRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
-    // ----------------- UPDATE PROFILE -----------------
     public String updateProfile(String email, Map<String, String> updates) {
+
         Admin admin = getCurrentUser(email);
-        if (updates.containsKey("name"))
+
+        if (updates.containsKey("name")) {
             admin.setName(updates.get("name"));
-        if (updates.containsKey("password"))
+        }
+
+        if (updates.containsKey("password")) {
             admin.setPassword(passwordEncoder.encode(updates.get("password")));
+        }
+
         adminRepository.save(admin);
+
         return "Profile updated successfully";
     }
 
-    // ----------------- LOGOUT -----------------
     public void logout(String token) {
-        if (token != null && !jwtBlacklistService.isBlacklisted(token)) {
-            jwtBlacklistService.blacklistToken(token);
-        }
+        jwtBlacklistService.blacklistToken(token);
     }
 
-    // ----------------- DELETE ACCOUNT -----------------
     public String deleteCurrentUser(String email) {
-        Admin admin = getCurrentUser(email);
-        adminRepository.delete(admin);
-        return "User account deleted successfully";
+
+        adminRepository.delete(getCurrentUser(email));
+        return "Account deleted";
     }
 }

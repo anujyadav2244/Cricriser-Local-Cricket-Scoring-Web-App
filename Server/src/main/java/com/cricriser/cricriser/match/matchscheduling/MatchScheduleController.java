@@ -1,8 +1,9 @@
-package com.cricriser.cricriser.match;
+package com.cricriser.cricriser.match.matchscheduling;
 
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -16,16 +17,19 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import lombok.Data;
+
+@Data
 @RestController
 @RequestMapping("/api/match")
 @CrossOrigin(origins = "${app.allowed.origins:http://localhost:5173}", allowCredentials = "true")
 public class MatchScheduleController {
 
-    private final MatchScheduleService service;
+    @Autowired
+    private MatchScheduleService service;
 
-    public MatchScheduleController(MatchScheduleService service) {
-        this.service = service;
-    }
+
+
 
     // ================= MANUAL MATCH CREATION =================
     @PostMapping("/create-manual")

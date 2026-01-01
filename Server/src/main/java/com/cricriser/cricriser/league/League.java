@@ -16,18 +16,31 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Document(collection = "league")
 public class League {
+
     @Id
     private String id;
+
     private String adminId;
     private String name;
+
+    private String leagueType;//NEW FIELD → "BILATERAL" or "TOURNAMENT"
+
     private int noOfTeams;
-    private List<String> teams = new ArrayList<>();
     private int noOfMatches;
+    private List<String> teams = new ArrayList<>();
+
     private Date startDate;
     private Date endDate;
-    private String venue;
-    private String leagueFormat; // ODI, T20, Test
+    private String tour;
+
+    private String leagueFormat;// T20, ODI, TEST
+
     private List<String> umpires;
-    private String leagueFormatType; // SINGLE_ROUND_ROBIN, DOUBLE_ROUND_ROBIN, GROUP
+
+    private String leagueFormatType;// SINGLE_ROUND_ROBIN, DOUBLE_ROUND_ROBIN, GROUP
+
+    private Integer oversPerInnings;
+    private Integer testDays;
+
     private String logoUrl;
 }
