@@ -1,15 +1,9 @@
 package com.cricriser.cricriser.config;
 
-
-
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
-
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
+import static org.springframework.security.config.Customizer.withDefaults;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -17,9 +11,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.cricriser.cricriser.security.JwtAuthFilter;
 
@@ -28,59 +19,62 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
 
-    @Value("${app.allowed.origins:http://localhost:5173}")
-    private String allowedOrigins; // comma separated
-
     public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
         this.jwtAuthFilter = jwtAuthFilter;
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
         http
+            // ✅ DISABLE CSRF (JWT BASED)
             .csrf(csrf -> csrf.disable())
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .sessionManagement(session -> session
-                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+
+            // ✅ ENABLE CORS
+            .cors(withDefaults())
+
+            // ✅ STATELESS SESSION
+            .sessionManagement(session ->
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
+
+            // ✅ AUTHORIZATION RULES
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**").permitAll()
-                // if you want summarizer public, add: .requestMatchers("/api/summarize/**").permitAll()
-                .requestMatchers("/api/users/**").authenticated()
-                .requestMatchers("/api/diagnosis/**").authenticated()
+                .requestMatchers(
+                    "/api/admin/signup",
+                    "/api/admin/login",
+                    "/api/admin/verify-otp",
+                    "/api/admin/forgot-password",
+                    "/api/admin/verify-forgot-otp",
+
+                    "/api/player/signup",
+                    "/api/player/login",
+                    "/api/player/verify-otp",
+                    "/api/player/forgot-password",
+                    "/api/player/verify-forgot-otp"
+                ).permitAll()
+
+                // EVERYTHING ELSE NEEDS LOGIN
                 .anyRequest().authenticated()
             )
+
+            // ✅ JWT FILTER
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
+    // ✅ PASSWORD ENCODER
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
+    // ✅ AUTH MANAGER
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
-    }
+    public AuthenticationManager authenticationManager(
+            AuthenticationConfiguration configuration) throws Exception {
 
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
-
-        List<String> origins = Arrays.stream(allowedOrigins.split(","))
-                                     .map(String::trim)
-                                     .collect(Collectors.toList());
-
-        config.setAllowedOrigins(origins);
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
-        config.setAllowCredentials(true);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-
-        return source;
+        return configuration.getAuthenticationManager();
     }
 }

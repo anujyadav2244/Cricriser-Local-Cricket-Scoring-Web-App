@@ -8,4 +8,5 @@ public interface LeagueRepository extends MongoRepository<League, String>{
     Optional<League> findByName(String name);
     List<League> findByAdminId(String adminId);
     boolean existsByName(String name);
+    
 }

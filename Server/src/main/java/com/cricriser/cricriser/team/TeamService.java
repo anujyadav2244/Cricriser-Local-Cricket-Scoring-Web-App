@@ -1,8 +1,8 @@
 package com.cricriser.cricriser.team;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -11,7 +11,8 @@ import org.springframework.web.multipart.MultipartFile;
 import com.cricriser.cricriser.cloudinary.CloudinaryService;
 import com.cricriser.cricriser.league.League;
 import com.cricriser.cricriser.league.LeagueRepository;
-import com.cricriser.cricriser.model.Player;
+import com.cricriser.cricriser.player.Player;
+import com.cricriser.cricriser.player.PlayerRepository;
 import com.cricriser.cricriser.security.JwtBlacklistService;
 import com.cricriser.cricriser.security.JwtUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,9 +21,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class TeamService {
 
     @Autowired
-    TeamRepository teamRepository;
+    private TeamRepository teamRepository;
     @Autowired
     private LeagueRepository leagueRepository;
+    @Autowired
+    private PlayerRepository playerRepository;
     @Autowired
     private JwtUtil jwtUtil;
     @Autowired
@@ -32,254 +35,277 @@ public class TeamService {
     @Autowired
     private ObjectMapper objectMapper;
 
-    // ======= CREATE TEAM =======
+    // ================= CREATE TEAM =================
     public Team createTeam(String token, String teamJson, MultipartFile logoFile) throws Exception {
+
         String adminId = validateToken(token);
         Team team = objectMapper.readValue(teamJson, Team.class);
 
         League league = leagueRepository.findById(team.getLeagueId())
-                .orElseThrow(() -> new Exception("League not found!"));
+                .orElseThrow(() -> new Exception("League not found"));
 
-        if (!league.getAdminId().equalsIgnoreCase(adminId))
-            throw new Exception("You are not authorized to add team to this league!");
-
-        // Duplicate team name inside league
-        List<Team> existingTeams = teamRepository.findByLeagueId(team.getLeagueId());
-        for (Team t : existingTeams) {
-            if (t.getName().equalsIgnoreCase(team.getName())) {
-                throw new Exception("Team name already exists in this league!");
-            }
+        if (!league.getAdminId().equalsIgnoreCase(adminId)) {
+            throw new Exception("Unauthorized");
         }
 
-        assignPlayerIds(team);
-        validateTeam(team, null);
+        if (teamRepository.existsByLeagueIdAndNameIgnoreCase(
+                team.getLeagueId(), team.getName())) {
+            throw new Exception("Team name already exists");
+        }
 
-        // Upload logo
+        // 🔹 CHANGED
+        validateTeam(team, league);
+
         if (logoFile != null && !logoFile.isEmpty()) {
-            String logoUrl = cloudinaryService.uploadFile(logoFile, "team_logos");
-            team.setLogoUrl(logoUrl);
+            team.setLogoUrl(cloudinaryService.uploadFile(logoFile, "team_logos"));
         }
 
-        // FIRST save team
         Team savedTeam = teamRepository.save(team);
 
-        // SECOND save team ID to league (IMPORTANT FIX)
         league.getTeams().add(savedTeam.getId());
         leagueRepository.save(league);
+
+        // 🔹 CHANGED
+        assignTeamToPlayers(savedTeam, league);
 
         return savedTeam;
     }
 
-    // ======= UPDATE TEAM =======
+    // ================= UPDATE =================
     public Team updateTeam(String token, String id, String teamJson, MultipartFile logoFile) throws Exception {
+
         String adminId = validateToken(token);
 
-        Team existingTeam = teamRepository.findById(id)
+        Team existing = teamRepository.findById(id)
                 .orElseThrow(() -> new Exception("Team not found"));
 
-        Optional<League> leagueOpt = leagueRepository.findById(existingTeam.getLeagueId());
-        if (leagueOpt.isEmpty())
-            throw new Exception("League not found!");
-        if (!leagueOpt.get().getAdminId().equalsIgnoreCase(adminId))
-            throw new Exception("You are not authorized to update this team!");
+        League league = leagueRepository.findById(existing.getLeagueId())
+                .orElseThrow(() -> new Exception("League not found"));
 
-        Team team = objectMapper.readValue(teamJson, Team.class);
-
-        // Duplicate name check (exclude same team)
-        List<Team> teamsInLeague = teamRepository.findByLeagueId(existingTeam.getLeagueId());
-        for (Team t : teamsInLeague) {
-            if (!t.getId().equalsIgnoreCase(existingTeam.getId()) &&
-                    t.getName().equalsIgnoreCase(team.getName())) {
-                throw new Exception("Another team in this league already has the same name!");
-            }
+        if (!league.getAdminId().equalsIgnoreCase(adminId)) {
+            throw new Exception("Unauthorized");
         }
 
-        assignPlayerIds(team);
-        validateTeam(team, existingTeam);
+        Team updated = objectMapper.readValue(teamJson, Team.class);
 
-        // Update fields
-        existingTeam.setName(team.getName());
-        existingTeam.setCoach(team.getCoach());
-        existingTeam.setSquad(team.getSquad());
-        existingTeam.setCaptain(team.getCaptain());
-        existingTeam.setViceCaptain(team.getViceCaptain());
+        // 🔹 use same league
+        validateTeam(updated, league);
 
-        // Update league team list name (if name changed)
-        League league = leagueOpt.get();
-        league.getTeams().remove(existingTeam.getId());
-        league.getTeams().add(existingTeam.getId());
+        existing.setName(updated.getName());
+        existing.setCoach(updated.getCoach());
+        existing.setCaptain(updated.getCaptain());
+        existing.setViceCaptain(updated.getViceCaptain());
+        existing.setSquadPlayerIds(updated.getSquadPlayerIds());
 
-        leagueRepository.save(league);
-
-        // Logo update
         if (logoFile != null && !logoFile.isEmpty()) {
-            List<Team> allTeams = teamRepository.findAll();
-            for (Team t : allTeams) {
-                if (!t.getId().equalsIgnoreCase(existingTeam.getId()) &&
-                        t.getLogoUrl() != null &&
-                        t.getLogoUrl().contains(logoFile.getOriginalFilename())) {
-                    throw new Exception("This logo is already assigned to another team!");
-                }
+            if (existing.getLogoUrl() != null) {
+                cloudinaryService.deleteFile(existing.getLogoUrl());
             }
-
-            if (existingTeam.getLogoUrl() != null && !existingTeam.getLogoUrl().isEmpty()) {
-                cloudinaryService.deleteFile(existingTeam.getLogoUrl());
-            }
-
-            String logoUrl = cloudinaryService.uploadFile(logoFile, "team_logos");
-            existingTeam.setLogoUrl(logoUrl);
+            existing.setLogoUrl(cloudinaryService.uploadFile(logoFile, "team_logos"));
         }
 
-        return teamRepository.save(existingTeam);
+        Team saved = teamRepository.save(existing);
+
+        // 🔹 correct call
+        assignTeamToPlayers(saved, league);
+
+        return saved;
+
     }
 
-    // ======= DELETE TEAM BY ID =======
+    // ================= DELETE =================
     public void deleteTeamById(String token, String id) throws Exception {
+
         String adminId = validateToken(token);
 
         Team team = teamRepository.findById(id)
                 .orElseThrow(() -> new Exception("Team not found"));
 
         League league = leagueRepository.findById(team.getLeagueId())
-                .orElseThrow(() -> new Exception("League not found!"));
+                .orElseThrow(() -> new Exception("League not found"));
 
-        if (!league.getAdminId().equalsIgnoreCase(adminId))
-            throw new Exception("You are not authorized to delete this team!");
+        if (!league.getAdminId().equalsIgnoreCase(adminId)) {
+            throw new Exception("Unauthorized");
+        }
 
-        // Delete logo from Cloudinary if exists
-        if (team.getLogoUrl() != null && !team.getLogoUrl().isEmpty()) {
+        //  RELEASE ALL PLAYERS
+        removeTeamFromPlayers(team);
+
+        //  DELETE LOGO IF PRESENT
+        if (team.getLogoUrl() != null && !team.getLogoUrl().isBlank()) {
             cloudinaryService.deleteFile(team.getLogoUrl());
         }
 
-        // Remove team from league's teams array safely
-        List<String> leagueTeams = league.getTeams();
-        if (leagueTeams != null) {
-            leagueTeams.removeIf(t -> {
-                String[] parts = t.split(":");
-                return parts.length > 1 && parts[1].equalsIgnoreCase(team.getId());
-            });
-            league.setTeams(leagueTeams);
-            leagueRepository.save(league);
-        }
+        //  REMOVE TEAM FROM LEAGUE
+        league.getTeams().remove(team.getId());
+        leagueRepository.save(league);
 
-        // Delete team from repository
+        //  DELETE TEAM DOCUMENT
         teamRepository.delete(team);
     }
 
-    // ======= DELETE ALL TEAMS FOR ADMIN =======
-    public void deleteAllTeamsByAdmin(String token) throws Exception {
-        String adminId = validateToken(token);
+    // ================= VALIDATION =================
+    private void validateTeam(Team team, League league) throws Exception {
 
-        List<League> adminLeagues = leagueRepository.findByAdminId(adminId);
+        if (team.getLeagueId() == null) {
+            throw new Exception("League ID missing");
+        }
 
-        for (League league : adminLeagues) {
-            List<Team> teams = teamRepository.findByLeagueId(league.getId());
+        if (team.getSquadPlayerIds() == null || team.getSquadPlayerIds().size() < 11) {
+            throw new Exception("Minimum 11 players required");
+        }
 
-            // Delete each team's logo safely
-            for (Team team : teams) {
-                if (team.getLogoUrl() != null && !team.getLogoUrl().isEmpty()) {
-                    cloudinaryService.deleteFile(team.getLogoUrl());
+        if (team.getCoach() == null || team.getCoach().isBlank()) {
+            throw new Exception("Coach required");
+        }
+
+        if (team.getCaptain() == null || team.getViceCaptain() == null) {
+            throw new Exception("Captain & Vice Captain required");
+        }
+
+        if (team.getCaptain().equals(team.getViceCaptain())) {
+            throw new Exception("Captain and Vice Captain cannot be same");
+        }
+
+        long distinct = team.getSquadPlayerIds().stream().distinct().count();
+        if (distinct != team.getSquadPlayerIds().size()) {
+            throw new Exception("Duplicate players in squad");
+        }
+
+        // 🔹 CHANGED
+        validatePlayers(team, league);
+    }
+
+    // ================= PLAYER VALIDATION =================
+    private void validatePlayers(Team team, League league) {
+
+        // convert league dates once
+        LocalDateTime leagueStart
+                = league.getStartDate().toInstant()
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDateTime();
+
+        LocalDateTime leagueEnd
+                = league.getEndDate().toInstant()
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDateTime();
+
+        for (String playerId : team.getSquadPlayerIds()) {
+
+            Player player = playerRepository.findById(playerId)
+                    .orElseThrow(() -> new RuntimeException("Invalid player ID: " + playerId));
+
+            if (player.getActiveLeagueId() != null) {
+
+                boolean overlap
+                        = !(leagueEnd.isBefore(player.getLeagueStartDate())
+                        || leagueStart.isAfter(player.getLeagueEndDate()));
+
+                if (overlap) {
+                    throw new RuntimeException(
+                            player.getName() + " is already playing in another league during this period");
                 }
             }
+        }
 
-            // Clear league's teams array safely
-            if (league.getTeams() != null) {
-                league.setTeams(List.of());
-                leagueRepository.save(league);
-            }
+        if (!team.getSquadPlayerIds().contains(team.getCaptain())
+                || !team.getSquadPlayerIds().contains(team.getViceCaptain())) {
+            throw new RuntimeException("Captain & Vice must be in squad");
+        }
+    }
 
-            // Delete all teams from repository
-            if (teams != null && !teams.isEmpty()) {
-                teamRepository.deleteAll(teams);
+    // ================= PLAYER LINK =================
+    private void assignTeamToPlayers(Team team, League league) {
+
+        // 🔹 Convert Date → LocalDateTime ONCE
+        LocalDateTime leagueStart
+                = league.getStartDate().toInstant()
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDateTime();
+
+        LocalDateTime leagueEnd
+                = league.getEndDate().toInstant()
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDateTime();
+
+        for (String pid : team.getSquadPlayerIds()) {
+
+            Player p = playerRepository.findById(pid)
+                    .orElseThrow(() -> new RuntimeException("Invalid Player ID: " + pid));
+
+            p.setCurrentTeamId(team.getId());
+            p.setActiveLeagueId(league.getId());
+            p.setLeagueStartDate(leagueStart); // ✅ LocalDateTime
+            p.setLeagueEndDate(leagueEnd);     // ✅ LocalDateTime
+
+            playerRepository.save(p);
+        }
+    }
+
+    private void removeTeamFromPlayers(Team team) {
+
+        for (String pid : team.getSquadPlayerIds()) {
+            Player p = playerRepository.findById(pid).orElse(null);
+            if (p != null) {
+                p.setCurrentTeamId(null);
+                playerRepository.save(p);
             }
         }
     }
 
-    // ======= GET TEAM =======
-    public Team getTeamById(String id) throws Exception {
-        return teamRepository.findById(id)
-                .orElseThrow(() -> new Exception("Team not found"));
+    public void deleteAllTeamsByAdmin(String token) throws Exception {
+
+        String adminId = validateToken(token);
+
+        List<League> leagues = leagueRepository.findByAdminId(adminId);
+
+        for (League league : leagues) {
+
+            List<Team> teams = teamRepository.findByLeagueId(league.getId());
+
+            for (Team team : teams) {
+
+                //  RELEASE PLAYERS
+                removeTeamFromPlayers(team);
+
+                //  DELETE LOGO
+                if (team.getLogoUrl() != null && !team.getLogoUrl().isBlank()) {
+                    cloudinaryService.deleteFile(team.getLogoUrl());
+                }
+
+                //  DELETE TEAM
+                teamRepository.delete(team);
+            }
+
+            //  CLEAR TEAM REFERENCES FROM LEAGUE
+            league.getTeams().clear();
+            leagueRepository.save(league);
+        }
     }
 
-    public Team getTeamByName(String name) throws Exception {
-        Team team = teamRepository.findByName(name);
-        if (team == null)
-            throw new Exception("Team not found");
-        return team;
+    // ================= GET =================
+    public Team getTeamById(String id) {
+        return teamRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Team not found"));
     }
 
     public List<Team> getAllTeams() {
         return teamRepository.findAll();
     }
 
-    // ======= VALIDATION LOGIC =======
-    private void validateTeam(Team team, Team existingTeam) throws Exception {
-
-        // ========== CHECK DUPLICATE TEAM NAME ==========
-        Team duplicate = teamRepository.findByName(team.getName());
-        if (duplicate != null && (existingTeam == null || !duplicate.getId().equalsIgnoreCase(existingTeam.getId())))
-            throw new Exception("Another team with this name already exists!");
-
-        // ========== CHECK VALID LEAGUE ==========
-        if (team.getLeagueId() == null || leagueRepository.findById(team.getLeagueId()).isEmpty())
-            throw new Exception("Team must belong to a valid league!");
-
-        // ========== CHECK SQUAD SIZE ==========
-        if (team.getSquad() == null || team.getSquad().size() < 15)
-            throw new Exception("Squad must have at least 15 players!");
-
-        // ========== CHECK DUPLICATE PLAYER NAMES ==========
-        List<String> names = team.getSquad().stream()
-                .map(p -> p.getName().trim().toLowerCase())
-                .toList();
-
-        long uniqueCount = names.stream().distinct().count();
-
-        if (uniqueCount != names.size()) {
-            throw new Exception("Duplicate player names found! Each player name must be unique in the squad.");
-        }
-
-        // ========== COACH SHOULD NOT BE IN SQUAD ==========
-        boolean coachInSquad = team.getSquad().stream()
-                .anyMatch(p -> p.getName().trim().equalsIgnoreCase(team.getCoach().trim()));
-        if (coachInSquad)
-            throw new Exception("Coach cannot be part of the squad!");
-
-        // ========== CAPTAIN / VICE CAPTAIN VALIDATION ==========
-        if (team.getCaptain() == null || team.getViceCaptain() == null)
-            throw new Exception("Captain and Vice-Captain must be assigned!");
-
-        boolean captainInSquad = team.getSquad().stream()
-                .anyMatch(p -> p.getName().trim().equalsIgnoreCase(team.getCaptain().trim()));
-        boolean viceCaptainInSquad = team.getSquad().stream()
-                .anyMatch(p -> p.getName().trim().equalsIgnoreCase(team.getViceCaptain().trim()));
-
-        if (!captainInSquad)
-            throw new Exception("Captain must be part of the squad!");
-        if (!viceCaptainInSquad)
-            throw new Exception("Vice-Captain must be part of the squad!");
-        if (team.getCaptain().trim().equalsIgnoreCase(team.getViceCaptain().trim()))
-            throw new Exception("Captain and Vice-Captain must be different!");
-    }
-
-    // ======= ASSIGN PLAYER IDS =======
-    private void assignPlayerIds(Team team) {
-        for (Player p : team.getSquad()) {
-            if (p.getId() == null || p.getId().isEmpty()) {
-                p.setId(UUID.randomUUID().toString());
-            }
-        }
-    }
-
-    // ======= VALIDATE TOKEN =======
+    // ================= TOKEN =================
     private String validateToken(String token) throws Exception {
-        if (token == null || !token.startsWith("Bearer "))
-            throw new Exception("Authorization header missing or invalid!");
+
+        if (token == null || !token.startsWith("Bearer ")) {
+            throw new Exception("Missing token");
+        }
 
         String jwt = token.substring(7);
-        if (blacklistService.isBlacklisted(jwt))
-            throw new Exception("Token is invalid or logged out. Please login again!");
 
-        return jwtUtil.extractEmail(jwt); // adminId/email
+        if (blacklistService.isBlacklisted(jwt)) {
+            throw new Exception("Session expired");
+        }
+
+        return jwtUtil.extractEmail(jwt);
     }
 }

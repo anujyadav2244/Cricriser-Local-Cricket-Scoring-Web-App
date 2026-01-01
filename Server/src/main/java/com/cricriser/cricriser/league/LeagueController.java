@@ -19,7 +19,8 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.cricriser.cricriser.match.MatchSchedule;
+import com.cricriser.cricriser.match.matchscheduling.MatchSchedule;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
@@ -48,7 +49,7 @@ public class LeagueController {
                     "message", "League created successfully",
                     "leagueId", league.getId(),
                     "matches", matches));
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
         }

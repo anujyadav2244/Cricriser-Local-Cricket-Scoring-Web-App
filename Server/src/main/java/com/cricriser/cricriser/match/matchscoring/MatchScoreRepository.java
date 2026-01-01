@@ -1,4 +1,4 @@
-package com.cricriser.cricriser.match;
+package com.cricriser.cricriser.match.matchscoring;
 
 import java.util.List;
 
@@ -11,4 +11,5 @@ public interface MatchScoreRepository extends MongoRepository<MatchScore, String
     List<MatchScore> findByLeagueId(String leagueId);
 
     void deleteByLeagueId(String leagueId);
+
 }
