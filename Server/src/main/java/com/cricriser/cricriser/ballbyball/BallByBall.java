@@ -70,15 +70,11 @@ public class BallByBall {
     // Boundary info
     private boolean boundary;     // true only if boundary scored
     private int boundaryRuns;     // 4 or 6 (valid only if boundary = true)
+    private boolean overthrowBoundary; // true if boundary came via overthrow
 
     private String newBowlerId; // ONLY for first ball of new over
 
-    public boolean isExtra() {
-        return extraRuns > 0
-                && ("WIDE".equals(extraType) || "NO_BALL".equals(extraType));
-    }
+    private int runningRuns; // runs completed by batters
 
-}   
-        
-                 
-    
+
+}

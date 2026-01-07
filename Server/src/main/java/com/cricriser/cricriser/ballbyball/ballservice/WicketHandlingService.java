@@ -19,17 +19,49 @@ public class WicketHandlingService {
             return;
         }
 
-        String wicketType = ball.getWicketType().toUpperCase();
+        String wicketType = ball.getWicketType();
 
-        // 🟡 RETIRED HURT → NOT OUT
-        if (wicketType.equals("RETIRED_HURT")) {
+        // RETIRED HURT → NOT OUT
+        if ("RETIRED_HURT".equalsIgnoreCase(wicketType)) {
             return;
         }
 
-        String outBatterId = resolveOutBatter(ball, score);
+        String outBatterId;
+
+        // ================= RUN OUT =================
+        if ("RUN_OUT".equalsIgnoreCase(wicketType)) {
+
+            outBatterId = ball.getOutBatterId();
+
+            String striker = score.getStrikerId();
+            String nonStriker = score.getNonStrikerId();
+
+            // 🔒 FINAL SAFETY CHECK (NO INFERENCE)
+            if (!outBatterId.equals(striker)
+                    && !outBatterId.equals(nonStriker)) {
+
+                throw new RuntimeException(
+                        "Run out batter must be striker or non-striker"
+                );
+            }
+
+            // 👉 DO NOT set striker here
+            // 👉 BattingStateService will handle replacement
+            matchStatsService.markBatterOut(
+                    ball.getMatchId(),
+                    outBatterId,
+                    wicketType,
+                    ball.getBowlerId(),
+                    ball.getFielderId()
+            );
+
+            return;
+        }
+
+        // ================= OTHER WICKETS =================
+        outBatterId = score.getStrikerId();
         ball.setOutBatterId(outBatterId);
 
-        // 🟢 Update Match Player Stats
         matchStatsService.markBatterOut(
                 ball.getMatchId(),
                 outBatterId,
@@ -37,18 +69,11 @@ public class WicketHandlingService {
                 ball.getBowlerId(),
                 ball.getFielderId()
         );
-
-        // 🟢 Remove from Yet-To-Bat already done earlier
     }
 
-    private String resolveOutBatter(BallByBall ball, MatchScore score) {
-
-        if (ball.getWicketType().equalsIgnoreCase("RUN_OUT")) {
-            return ball.getOutBatterId();
-        }
-
-        return score.getStrikerId();
+    private void swap(MatchScore score) {
+        String temp = score.getStrikerId();
+        score.setStrikerId(score.getNonStrikerId());
+        score.setNonStrikerId(temp);
     }
-
-
 }

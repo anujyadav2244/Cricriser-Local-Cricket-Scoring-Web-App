@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import com.cricriser.cricriser.security.JwtBlacklistService;
 import com.cricriser.cricriser.security.JwtUtil;
 import com.cricriser.cricriser.service.EmailService;
+import java.util.Optional;
 
 @Service
 public class AdminService {
@@ -33,22 +34,42 @@ public class AdminService {
     // ===================== SIGNUP =====================
     public String signup(Admin admin) {
 
-        if (adminRepository.findByEmail(admin.getEmail()).isPresent()) {
-            throw new RuntimeException("Email already registered!");
+        Optional<Admin> existing = adminRepository.findByEmail(admin.getEmail());
+
+    if (existing.isPresent()) {
+
+        Admin existingAdmin = existing.get();
+
+        // ✅ Case 1: Already verified → block signup
+        if (Boolean.TRUE.equals(existingAdmin.getVerified())) {
+            throw new RuntimeException("Email already registered. Please login.");
         }
 
+        // ✅ Case 2: Not verified → resend OTP
         String otp = String.format("%06d", new Random().nextInt(1_000_000));
 
-        admin.setOtp(passwordEncoder.encode(otp));
-        admin.setOtpGeneratedAt(LocalDateTime.now());
-        admin.setVerified(false);
-        admin.setPassword(passwordEncoder.encode(admin.getPassword()));
+        existingAdmin.setOtp(passwordEncoder.encode(otp));
+        existingAdmin.setOtpGeneratedAt(LocalDateTime.now());
 
-        emailService.sendOtpEmail(admin.getEmail(), otp);
-        adminRepository.save(admin);
+        emailService.sendOtpEmail(existingAdmin.getEmail(), otp);
+        adminRepository.save(existingAdmin);
 
-        return "OTP sent successfully to " + admin.getEmail();
+        return "OTP resent successfully to " + existingAdmin.getEmail();
     }
+
+    // ✅ New user signup
+    String otp = String.format("%06d", new Random().nextInt(1_000_000));
+
+    admin.setOtp(passwordEncoder.encode(otp));
+    admin.setOtpGeneratedAt(LocalDateTime.now());
+    admin.setVerified(false);
+    admin.setPassword(passwordEncoder.encode(admin.getPassword()));
+
+    emailService.sendOtpEmail(admin.getEmail(), otp);
+    adminRepository.save(admin);
+
+    return "OTP sent successfully to " + admin.getEmail();
+}
 
     // ===================== VERIFY SIGNUP OTP =====================
     public String verifyOtp(String email, String otp) {

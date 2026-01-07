@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.cricriser.cricriser.ballbyball.BallByBall;
+import com.cricriser.cricriser.ballbyball.ballservice.BallService;
 
 @Service
 public class PlayerStatsService {
@@ -11,34 +12,43 @@ public class PlayerStatsService {
     @Autowired
     private PlayerStatsRepository playerStatsRepository;
 
+    @Autowired
+    private BallService ballService;
+
     // ================= UPDATE CAREER STATS =================
     public void updatePlayerStats(BallByBall ball) {
 
-        // -------- BATTER --------
-        String batterIdForStats
-                = ball.isWicket() ? ball.getOutBatterId() : ball.getBatterId();
+        // ================= BATTER =================
+        String batterId = ball.isWicket()
+                ? ball.getOutBatterId()
+                : ball.getBatterId();
 
-        PlayerStats batter = getOrCreate(batterIdForStats);
+        PlayerStats batter = getOrCreate(batterId);
 
-// ✅ INNINGS (first appearance)
-        if (batter.getBallsFaced() == 0) {
-            batter.setInnings(batter.getInnings() + 1);
-        }
+// ✅ ADD ONLY BAT RUNS (NO WIDE, NO BYES)
+        if (!"WIDE".equalsIgnoreCase(ball.getExtraType())
+                && ball.getRuns() > 0) {
 
-// ✅ RUNS
-        batter.setRunsScored(
-                batter.getRunsScored() + ball.getRuns()
-        );
-
-// ✅ BALLS FACED
-        if (ball.isLegalBall()) {
-            batter.setBallsFaced(
-                    batter.getBallsFaced() + 1
+            batter.setRunsScored(
+                    batter.getRunsScored() + ball.getRuns()
             );
         }
 
-// ✅ BOUNDARIES
-        if (ball.isBoundary()) {
+// ✅ BALLS FACED
+// - Legal ball
+// - No ball
+// - NOT wide
+        if ((ball.isLegalBall() || "NO_BALL".equalsIgnoreCase(ball.getExtraType()))
+                && !"WIDE".equalsIgnoreCase(ball.getExtraType())) {
+
+            batter.setBallsFaced(batter.getBallsFaced() + 1);
+        }
+
+// ✅ BOUNDARIES (ONLY OFF BAT)
+        if (ball.isBoundary()
+                && !"WIDE".equalsIgnoreCase(ball.getExtraType())
+                && ball.getRuns() > 0) {
+
             if (ball.getBoundaryRuns() == 4) {
                 batter.setFours(batter.getFours() + 1);
             }
@@ -57,27 +67,20 @@ public class PlayerStatsService {
 
         playerStatsRepository.save(batter);
 
-        // -------- BOWLER --------
+        // ================= BOWLER =================
         PlayerStats bowler = getOrCreate(ball.getBowlerId());
 
-        // 🟢 FIRST BALL BOWLED → INNINGS++
-        if (ball.isLegalBall() && bowler.getBallsBowled() == 0) {
-            bowler.setInnings(bowler.getInnings() + 1);
-        }
-
         if (ball.isLegalBall()) {
-            bowler.setBallsBowled(
-                    bowler.getBallsBowled() + 1
-            );
+            bowler.setBallsBowled(bowler.getBallsBowled() + 1);
         }
 
+        // ✅ RUNS CONCEDED (INCLUDING EXTRAS)
         bowler.setRunsConceded(
                 bowler.getRunsConceded()
-                + ball.getRuns()
-                + ball.getExtraRuns()
+                + ballService.calculateTotalRuns(ball)
         );
 
-        // ================= EXTRAS (CAREER BOWLING) =================
+        // ✅ EXTRAS
         if ("WIDE".equalsIgnoreCase(ball.getExtraType())) {
             bowler.setWides(bowler.getWides() + ball.getExtraRuns());
         }
@@ -86,10 +89,9 @@ public class PlayerStatsService {
             bowler.setNoBalls(bowler.getNoBalls() + 1);
         }
 
+        // ✅ WICKETS
         if (ball.isWicket() && isBowlerWicket(ball.getWicketType())) {
-            bowler.setWickets(
-                    bowler.getWickets() + 1
-            );
+            bowler.setWickets(bowler.getWickets() + 1);
         }
 
         if (bowler.getBallsBowled() > 0) {
@@ -99,7 +101,6 @@ public class PlayerStatsService {
             );
         }
 
-        playerStatsRepository.save(batter);
         playerStatsRepository.save(bowler);
     }
 

@@ -4,12 +4,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.cricriser.cricriser.ballbyball.BallByBall;
+import com.cricriser.cricriser.ballbyball.ballservice.BallService;
 
 @Service
 public class MatchScoreUpdateService {
 
     @Autowired
     private MatchScoreRepository matchScoreRepository;
+
+    @Autowired
+    private MatchScoreService matchScoreService;
+
+    @Autowired
+    private BallService ballService;
 
     // ===================== PRE BALL VALIDATION =====================
     public MatchScore validateBeforeBall(String matchId, int innings) {
@@ -19,6 +26,7 @@ public class MatchScoreUpdateService {
             throw new RuntimeException("Match score does not exist");
         }
 
+        // ✅ ONLY this check
         if (!"Match In Progress".equalsIgnoreCase(score.getMatchStatus())) {
             throw new RuntimeException("Match is not in progress");
         }
@@ -36,7 +44,6 @@ public class MatchScoreUpdateService {
             }
         }
 
-        // ✅ Striker checks ONLY
         if (score.getStrikerId() == null || score.getStrikerId().isBlank()) {
             throw new RuntimeException("Striker not set");
         }
@@ -49,7 +56,6 @@ public class MatchScoreUpdateService {
             throw new RuntimeException("Striker and non-striker cannot be same");
         }
 
-        // ❌ NO BOWLER VALIDATION HERE
         return score;
     }
 
@@ -58,7 +64,7 @@ public class MatchScoreUpdateService {
         boolean team1Batting
                 = score.getBattingTeamId().equals(score.getTeam1Id());
 
-        int runs = ball.getRuns() + ball.getExtraRuns();
+        int runs = ballService.calculateTotalRuns(ball);
 
         // RUNS
         if (team1Batting) {
@@ -85,45 +91,69 @@ public class MatchScoreUpdateService {
             }
         }
 
-        // OVERS (legal balls only)
+        // OVERS
         if (ball.isLegalBall()) {
-
             if (team1Batting) {
-                score.setTeam1Overs(
-                        incrementOvers(score.getTeam1Overs())
-                );
+                score.setTeam1Overs(incrementOvers(score.getTeam1Overs()));
             } else {
-                score.setTeam2Overs(
-                        incrementOvers(score.getTeam2Overs())
-                );
+                score.setTeam2Overs(incrementOvers(score.getTeam2Overs()));
             }
         }
 
-        // INNINGS END
-        checkInningsCompletion(score);
+        // 🔥 INNINGS + MATCH COMPLETION
+        checkInningsCompletion(score, ball);
 
         matchScoreRepository.save(score);
     }
 
+    private void checkInningsCompletion(MatchScore score, BallByBall ball) {
 
-    private void checkInningsCompletion(MatchScore score) {
+        boolean team1Batting
+                = score.getBattingTeamId().equals(score.getTeam1Id());
 
+        int wickets = team1Batting
+                ? score.getTeam1Wickets()
+                : score.getTeam2Wickets();
+
+        double overs = team1Batting
+                ? score.getTeam1Overs()
+                : score.getTeam2Overs();
+
+        int runs = team1Batting
+                ? score.getTeam1Runs()
+                : score.getTeam2Runs();
+
+        boolean overLimitReached
+                = ball.isOverCompleted()
+                && overs >= score.getTotalOvers();
+
+        // ================= FIRST INNINGS =================
         if (!score.isFirstInningsCompleted()) {
 
-            if (score.getTeam1Wickets() == 10
-                    || score.getTeam1Overs() >= score.getTotalOvers()) {
+            if (wickets == 10 || overLimitReached) {
 
                 score.setFirstInningsCompleted(true);
+
+                // Match still continues
+                score.setMatchStatus("Match In Progress");
             }
+            return;
+        }
 
-        } else if (!score.isSecondInningsCompleted()) {
+        // ================= SECOND INNINGS =================
+        int target = score.getTeam1Runs() + 1;
 
-            if (score.getTeam2Wickets() == 10
-                    || score.getTeam2Overs() >= score.getTotalOvers()
-                    || score.getTeam2Runs() > score.getTeam1Runs()) {
+        if (!score.isSecondInningsCompleted()) {
+
+            if (wickets == 10
+                    || overLimitReached
+                    || runs >= target) {
 
                 score.setSecondInningsCompleted(true);
                 score.setMatchStatus("Completed");
+
+                // 🔥🔥🔥 DECIDE WINNER HERE 🔥🔥🔥
+                matchScoreService.computeWinner(score);
             }
         }
     }
