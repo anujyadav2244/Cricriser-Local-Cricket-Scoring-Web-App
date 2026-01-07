@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.cricriser.cricriser.ballbyball.BallByBall;
+import com.cricriser.cricriser.ballbyball.ballservice.BallService;
 import com.cricriser.cricriser.ballbyball.ballservice.OverService;
 import com.cricriser.cricriser.match.matchscoring.MatchScore;
 
@@ -16,23 +17,36 @@ public class MatchPlayerStatsService {
     @Autowired
     private OverService overService;
 
+    @Autowired
+    private BallService ballService;
+
     public void updateMatchPlayerStats(BallByBall ball, MatchScore score) {
 
-        // 🔥 BATTER
+        // ================= BATTER =================
         MatchPlayerStats batter
                 = getOrCreate(ball.getMatchId(), ball.getBatterId());
 
-        batter.setRuns(batter.getRuns() + ball.getRuns());
+// ✅ BAT RUNS ONLY
+        if (!"WIDE".equalsIgnoreCase(ball.getExtraType())
+                && ball.getRuns() > 0) {
 
-        // Batter balls faced ONLY if legal AND not wide/no-ball
-        if (ball.isLegalBall()
-                && !"WIDE".equals(ball.getExtraType())
-                && !"NO_BALL".equals(ball.getExtraType())) {
+            batter.setRuns(
+                    batter.getRuns() + ball.getRuns()
+            );
+        }
+
+// ✅ BALLS FACED
+        if ((ball.isLegalBall() || "NO_BALL".equalsIgnoreCase(ball.getExtraType()))
+                && !"WIDE".equalsIgnoreCase(ball.getExtraType())) {
 
             batter.setBalls(batter.getBalls() + 1);
         }
 
-        if (ball.isBoundary()) {
+// ✅ BOUNDARIES OFF BAT
+        if (ball.isBoundary()
+                && !"WIDE".equalsIgnoreCase(ball.getExtraType())
+                && ball.getRuns() > 0) {
+
             if (ball.getBoundaryRuns() == 4) {
                 batter.setFours(batter.getFours() + 1);
             }
@@ -41,15 +55,17 @@ public class MatchPlayerStatsService {
             }
         }
 
+// ✅ STRIKE RATE
         if (batter.getBalls() > 0) {
             batter.setStrikeRate(
-                    (batter.getRuns() * 100.0) / batter.getBalls()
+                    (batter.getRuns() * 100.0)
+                    / batter.getBalls()
             );
         }
 
         repo.save(batter);
 
-        // 🔥 BOWLER
+        // ================= BOWLER =================
         MatchPlayerStats bowler
                 = getOrCreate(ball.getMatchId(), ball.getBowlerId());
 
@@ -64,11 +80,9 @@ public class MatchPlayerStatsService {
 
         bowler.setRunsConceded(
                 bowler.getRunsConceded()
-                + ball.getRuns()
-                + ball.getExtraRuns()
+                + ballService.calculateTotalRuns(ball)
         );
 
-        // ================= EXTRAS (BOWLER) =================
         if ("WIDE".equalsIgnoreCase(ball.getExtraType())) {
             bowler.setWides(bowler.getWides() + ball.getExtraRuns());
         }
@@ -131,12 +145,11 @@ public class MatchPlayerStatsService {
         };
     }
 
-    private double calculateOvers(int balls) {
-        int overs = balls / 6;
-        int remBalls = balls % 6;
-        return overs + (remBalls / 10.0);
-    }
-
+    // private double calculateOvers(int balls) {
+    //     int overs = balls / 6;
+    //     int remBalls = balls % 6;
+    //     return overs + (remBalls / 10.0);
+    // }
     public void createIfNotExists(String matchId, String playerId) {
 
         repo.findByMatchIdAndPlayerId(matchId, playerId)

@@ -9,19 +9,22 @@ public class SnapshotService {
 
     public void updateSnapshot(BallByBall ball) {
 
-        ball.setOversAtBall(
-            ball.getOver() + (ball.getBall() - 1) / 10.0
-        );
+        // ✔ Correct over calculation
+        double overs
+                = ball.getOver()
+                + ((ball.getBall() - 1) / 6.0);
 
+        ball.setOversAtBall(overs);
+
+        // ✔ Accumulative logic must be handled elsewhere
         ball.setTotalRunsAtBall(
-            ball.getRuns() + ball.getExtraRuns()
+                ball.getRuns() + ball.getExtraRuns()
         );
 
         ball.setTotalWicketsAtBall(
-            ball.isWicket() ? 1 : 0
+                ball.isWicket() ? 1 : 0
         );
 
         ball.setTimestamp(System.currentTimeMillis());
     }
 }
-

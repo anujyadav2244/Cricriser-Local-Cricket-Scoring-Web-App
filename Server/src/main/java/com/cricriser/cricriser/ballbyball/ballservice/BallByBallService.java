@@ -60,90 +60,68 @@ public class BallByBallService {
     @Transactional
     public BallByBall recordBall(BallByBall ball) {
 
-        // =====================================================
-        // 1️⃣ FETCH & VALIDATE MATCH STATE
-        // =====================================================
+        // 1️⃣ FETCH MATCH STATE
         MatchScore score = matchScoreRepository.findByMatchId(ball.getMatchId());
         if (score == null) {
             throw new RuntimeException("Match score not found");
         }
 
+        // 2️⃣ PRE-BALL VALIDATION (match / innings level)
         matchScoreUpdateService.validateBeforeBall(
                 ball.getMatchId(),
                 ball.getInnings()
         );
 
-        // =====================================================
-        // 2️⃣ HANDLE NEW OVER (BOWLER SELECTION)
-        // =====================================================
+        // 3️⃣ HANDLE NEW OVER (SET NEW BOWLER IF REQUIRED)
         playerValidationService.validateAndSetNewBowler(ball, score);
 
-        // =====================================================
-        // 3️⃣ FREEZE PRE-BALL LIVE STATE
-        // =====================================================
+        // 4️⃣ FREEZE CURRENT MATCH STATE INTO BALL
         ball.setBattingTeamId(score.getBattingTeamId());
         ball.setBatterId(score.getStrikerId());
         ball.setNonStrikerId(score.getNonStrikerId());
         ball.setBowlerId(score.getCurrentBowlerId());
 
-        // =====================================================
-        // 4️⃣ ASSIGN OVER / BALL NUMBER
-        // =====================================================
+        // 5️⃣ NORMALIZE + BASIC BALL VALIDATION
+        ballService.normalizeWicketState(ball);
+        ballService.validate(ball);
+
+        // 6️⃣ ASSIGN OVER / BALL NUMBER
         ballService.assignBallNumber(ball);
 
-        // =====================================================
-        // 5️⃣ VALIDATIONS BASED ON ASSIGNED BALL
-        // =====================================================
+        // 7️⃣ PLAYER VALIDATIONS (CURRENT BATTERS + BOWLER)
         playerValidationService.validateBowler(ball);
         playerValidationService.validateBatters(ball, score);
 
-        // =====================================================
-        // 6️⃣ APPLY BALL EVENTS (NO STRIKE ROTATION)
-        // =====================================================
+        // 8️⃣ APPLY EXTRAS (NO STATE CHANGE)
         extraService.applyExtras(ball);
 
-        // 👉 Decide WHO is out (outBatterId)
-        wicketService.handleWicket(ball, score, matchPlayerStatsService);
-
-        // 👉 Validate new batter if wicket
+        // 9️⃣ 🔥 VALIDATE NEW BATTER (BEFORE ANY MUTATION)
         playerValidationService.validateNewBatter(ball, score);
 
-        // =====================================================
-        // 7️⃣ APPLY BATTING STATE CHANGES
-        //     (out list, yet-to-bat, batter replacement)
-        // =====================================================
+        // 🔟 HANDLE WICKET (SETS outBatterId, updates score position)
+        wicketService.handleWicket(ball, score, matchPlayerStatsService);
+
+        // 1️⃣1️⃣ APPLY BATTING STATE (OUT / YET-TO-BAT / REPLACEMENT)
         battingStateService.applyWicketState(ball, score);
 
-        // =====================================================
-        // 8️⃣ OVER COMPLETION LOGIC
-        // =====================================================
+        // 1️⃣2️⃣ OVER COMPLETION CHECK
         overService.checkOverCompletion(ball, score);
 
-        // =====================================================
-        // 9️⃣ STRIKE ROTATION (FINAL & ONLY PLACE)
-        // =====================================================
+        // 1️⃣3️⃣ STRIKE ROTATION
         strikeService.rotateStrike(ball, score);
 
-        // =====================================================
-        // 🔟 PERSIST BALL & MATCH STATE
-        // =====================================================
+        // 1️⃣4️⃣ SAVE BALL + MATCH SCORE
         BallByBall savedBall = ballRepo.save(ball);
         matchScoreRepository.save(score);
 
-        // =====================================================
-        // 1️⃣1️⃣ UPDATE MATCH SCORE (RUNS / OVERS / WICKETS)
-        // =====================================================
+        // 1️⃣5️⃣ UPDATE MATCH SCORE (RUNS / WICKETS / OVERS)
         matchScoreUpdateService.updateMatchScore(savedBall, score);
 
-        // =====================================================
-        // 1️⃣2️⃣ UPDATE PLAYER STATS
-        // =====================================================
+        // 1️⃣6️⃣ PLAYER & MATCH STATS
         playerStatsService.updatePlayerStats(savedBall);
         matchPlayerStatsService.updateMatchPlayerStats(savedBall, score);
 
-        // =====================================================
-        // 1️⃣3️⃣ SNAPSHOT (OPTIONAL)
-        // =====================================================
+        // 1️⃣7️⃣ SNAPSHOT (AUDIT)
         snapshotService.updateSnapshot(savedBall);
 
         return savedBall;

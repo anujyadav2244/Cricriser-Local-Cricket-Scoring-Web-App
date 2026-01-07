@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.cricriser.cricriser.ballbyball.BallByBall;
 import com.cricriser.cricriser.ballbyball.BallByBallRepository;
 import com.cricriser.cricriser.league.League;
 import com.cricriser.cricriser.league.LeagueRepository;
@@ -16,6 +15,7 @@ import com.cricriser.cricriser.match.matchscheduling.MatchSchedule;
 import com.cricriser.cricriser.match.matchscheduling.MatchScheduleRepository;
 import com.cricriser.cricriser.player.matchplayerstats.MatchPlayerStats;
 import com.cricriser.cricriser.player.matchplayerstats.MatchPlayerStatsRepository;
+import com.cricriser.cricriser.player.playerstats.PlayerStatsService;
 import com.cricriser.cricriser.points.PointsTableService;
 import com.cricriser.cricriser.team.Team;
 import com.cricriser.cricriser.team.TeamRepository;
@@ -44,7 +44,11 @@ public class MatchScoreService {
     @Autowired
     private BallByBallRepository ballByBallRepository;
 
+    @Autowired
+    private PlayerStatsService playerStatsService;
+
     // Initiate innings
+    @Transactional
     public MatchScore startInnings(
             String matchId,
             int innings,
@@ -52,8 +56,14 @@ public class MatchScoreService {
             String nonStrikerId,
             String bowlerId
     ) {
-        if (innings <= 0) {
+
+        // ================= BASIC VALIDATION =================
+        if (innings != 1 && innings != 2) {
             throw new RuntimeException("Invalid innings number");
+        }
+
+        if (strikerId.equals(nonStrikerId)) {
+            throw new RuntimeException("Striker and non-striker cannot be same");
         }
 
         MatchScore score = matchScoreRepository.findByMatchId(matchId);
@@ -61,21 +71,37 @@ public class MatchScoreService {
             throw new RuntimeException("Match score not found");
         }
 
-        // INNINGS ALREADY STARTED → CONTINUE
-        if (score.getInnings() == innings
-                && score.getStrikerId() != null
-                && score.getNonStrikerId() != null
-                && score.getCurrentBowlerId() != null) {
-
-            return score;
+        // ================= PREVENT ILLEGAL STARTS =================
+        if (innings == 1 && score.isFirstInningsCompleted()) {
+            throw new RuntimeException("First innings already completed");
         }
 
-        // ---------- FIRST TIME START ----------
-        if (strikerId.equals(nonStrikerId)) {
-            throw new RuntimeException("Striker and non-striker cannot be same");
+        if (innings == 2 && score.isSecondInningsCompleted()) {
+            throw new RuntimeException("Second innings already completed");
         }
 
-        // Decide batting & bowling teams
+        if (innings == 2 && !score.isFirstInningsCompleted()) {
+            throw new RuntimeException("Cannot start second innings before first innings completes");
+        }
+
+        // ================= RESET MATCH STATE (🔥 CRITICAL) =================
+        // This guarantees "Match In Progress" errors NEVER happen
+        score.setMatchStatus("Match In Progress");
+
+        if (innings == 1) {
+            score.setFirstInningsCompleted(false);
+            score.setSecondInningsCompleted(false);
+        }
+
+        if (innings == 2) {
+            score.setSecondInningsCompleted(false);
+        }
+
+        // Clear bowling state
+        score.setCurrentBowlerId(null);
+        score.setLastOverBowlerId(null);
+
+        // ================= DECIDE BATTING & BOWLING TEAM =================
         String battingTeamId;
         String bowlingTeamId;
 
@@ -84,31 +110,26 @@ public class MatchScoreService {
             boolean tossWinnerBats
                     = score.getTossDecision().equalsIgnoreCase("BAT");
 
-            if (tossWinnerBats) {
-                battingTeamId = score.getTossWinner();
-            } else {
-                battingTeamId = score.getTossWinner().equals(score.getTeam1Id())
-                        ? score.getTeam2Id()
-                        : score.getTeam1Id();
-            }
-
-            bowlingTeamId = battingTeamId.equals(score.getTeam1Id())
+            battingTeamId = tossWinnerBats
+                    ? score.getTossWinner()
+                    : score.getTossWinner().equals(score.getTeam1Id())
                     ? score.getTeam2Id()
                     : score.getTeam1Id();
+
         } else {
-
+            // Second innings → opposite team bats
             battingTeamId = score.getBattingTeamId().equals(score.getTeam1Id())
-                    ? score.getTeam2Id()
-                    : score.getTeam1Id();
-
-            bowlingTeamId = battingTeamId.equals(score.getTeam1Id())
                     ? score.getTeam2Id()
                     : score.getTeam1Id();
         }
 
+        bowlingTeamId = battingTeamId.equals(score.getTeam1Id())
+                ? score.getTeam2Id()
+                : score.getTeam1Id();
+
         score.setBattingTeamId(battingTeamId);
 
-        // Validate opening batters
+        // ================= OPENING BATTERS VALIDATION =================
         List<String> yetToBat = battingTeamId.equals(score.getTeam1Id())
                 ? score.getTeam1YetToBat()
                 : score.getTeam2YetToBat();
@@ -120,7 +141,7 @@ public class MatchScoreService {
         yetToBat.remove(strikerId);
         yetToBat.remove(nonStrikerId);
 
-        // Validate bowler
+        // ================= BOWLER VALIDATION =================
         List<String> bowlingXI = bowlingTeamId.equals(score.getTeam1Id())
                 ? score.getTeam1PlayingXI()
                 : score.getTeam2PlayingXI();
@@ -129,14 +150,22 @@ public class MatchScoreService {
             throw new RuntimeException("Bowler must belong to bowling team");
         }
 
-        // Set state
+        // ================= PLAYER STATS INITIALIZATION =================
+        playerStatsService.incrementMatchIfNotExists(strikerId);
+        playerStatsService.incrementMatchIfNotExists(nonStrikerId);
+        playerStatsService.incrementMatchIfNotExists(bowlerId);
+
+        playerStatsService.incrementInningsIfFirstBall(strikerId, true, false);
+        playerStatsService.incrementInningsIfFirstBall(nonStrikerId, true, false);
+        playerStatsService.incrementInningsIfFirstBall(bowlerId, false, true);
+
+        // ================= SET LIVE MATCH STATE =================
         score.setInnings(innings);
         score.setStrikerId(strikerId);
         score.setNonStrikerId(nonStrikerId);
         score.setCurrentBowlerId(bowlerId);
-        score.setLastOverBowlerId(null);
-        score.setMatchStatus("Match In Progress");
 
+        // ================= ENSURE MATCH PLAYER STATS =================
         createIfNotExists(matchId, strikerId);
         createIfNotExists(matchId, nonStrikerId);
         createIfNotExists(matchId, bowlerId);
@@ -331,7 +360,7 @@ public class MatchScoreService {
     }
 
     // ===================== WINNER DECIDER =====================
-    private void computeWinner(MatchScore score) {
+    public void computeWinner(MatchScore score) {
 
         String t1 = score.getTeam1Id();
         String t2 = score.getTeam2Id();
@@ -418,6 +447,5 @@ public class MatchScoreService {
                     return repo.save(stats);
                 });
     }
-
 
 }

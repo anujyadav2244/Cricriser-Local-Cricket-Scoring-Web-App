@@ -13,11 +13,17 @@ public class InningsValidationService {
             int currentRuns
     ) {
 
-        if (wickets >= 10) return true;
+        if (wickets >= 10) {
+            return true;
+        }
 
-        if (overs >= maxOvers) return true;
+        if (overs >= maxOvers) {
+            return true;
+        }
 
-        if (target != null && currentRuns >= target) return true;
+        if (target != null && currentRuns >= target) {
+            return true;
+        }
 
         return false;
     }

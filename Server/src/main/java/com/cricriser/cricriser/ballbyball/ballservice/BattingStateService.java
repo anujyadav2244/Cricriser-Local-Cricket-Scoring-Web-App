@@ -1,6 +1,5 @@
 package com.cricriser.cricriser.ballbyball.ballservice;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.cricriser.cricriser.ballbyball.BallByBall;
@@ -58,43 +57,34 @@ public class BattingStateService {
             MatchScore score,
             String newBatterId
     ) {
+        String outBatterId = ball.getOutBatterId();
 
-        boolean strikerOut
-                = ball.getOutBatterId().equals(score.getStrikerId());
-
-        boolean oddRun = ball.getRuns() % 2 == 1;
-        boolean lastBallOfOver = ball.isOverCompleted();
-
-        // ================= NORMAL WICKET =================
-        if (!"RUN_OUT".equalsIgnoreCase(ball.getWicketType())) {
-            score.setStrikerId(newBatterId);
-            return;
-        }
+        String striker = score.getStrikerId();
+        String nonStriker = score.getNonStrikerId();
 
         // ================= RUN OUT =================
-        if (strikerOut) {
-            // striker got out → new batter replaces striker
-            score.setStrikerId(newBatterId);
+        if ("RUN_OUT".equalsIgnoreCase(ball.getWicketType())) {
 
-            // odd run + crossing → swap
-            if (oddRun) {
-                swap(score);
+            if (outBatterId.equals(striker)) {
+                // striker got out → new batter takes striker position
+                score.setStrikerId(newBatterId);
+
+            } else if (outBatterId.equals(nonStriker)) {
+                // non-striker got out → new batter takes non-striker position
+                score.setNonStrikerId(newBatterId);
+
+            } else {
+                throw new RuntimeException(
+                        "Out batter is neither striker nor non-striker"
+                );
             }
 
-        } else {
-            // non-striker got out → new batter replaces non-striker
-            score.setNonStrikerId(newBatterId);
-
-            // odd run + crossing → swap
-            if (oddRun) {
-                swap(score);
-            }
+            return; // 🚫 NO strike rotation here
         }
 
-        // ================= OVER END SWAP =================
-        if (lastBallOfOver) {
-            swap(score);
-        }
+        // ================= OTHER WICKETS =================
+        // Bowled, Caught, LBW, Stumped → striker always out
+        score.setStrikerId(newBatterId);
     }
 
     private void swap(MatchScore score) {

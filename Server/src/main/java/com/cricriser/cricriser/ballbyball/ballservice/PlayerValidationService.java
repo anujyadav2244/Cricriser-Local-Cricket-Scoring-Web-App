@@ -8,7 +8,6 @@ import org.springframework.stereotype.Service;
 import com.cricriser.cricriser.ballbyball.BallByBall;
 import com.cricriser.cricriser.ballbyball.BallByBallRepository;
 import com.cricriser.cricriser.match.matchscoring.MatchScore;
-import com.cricriser.cricriser.player.matchplayerstats.MatchPlayerStatsService;
 
 @Service
 public class PlayerValidationService {
@@ -16,10 +15,9 @@ public class PlayerValidationService {
     @Autowired
     private BallByBallRepository ballRepo;
 
-    @Autowired
-    private MatchPlayerStatsService matchPlayerStatsService;
-
-    // ===================== BOWLER VALIDATION =====================
+    // =====================================================
+    // 1️⃣ BOWLER VALIDATION
+    // =====================================================
     public void validateBowler(BallByBall ball) {
 
         BallByBall lastBall
@@ -29,16 +27,18 @@ public class PlayerValidationService {
 
         // First ball of innings
         if (lastBall == null) {
+            if (ball.getBowlerId() == null) {
+                throw new RuntimeException("Bowler must be set for first ball");
+            }
             return;
         }
 
         if (ball.getBowlerId() == null) {
-            throw new RuntimeException("Bowler not set for this ball");
+            throw new RuntimeException("Bowler not set");
         }
 
-        // Same over → same bowler only
+        // Same over → same bowler
         if (ball.getOver() == lastBall.getOver()) {
-
             if (!ball.getBowlerId().equals(lastBall.getBowlerId())) {
                 throw new RuntimeException(
                         "Same bowler must complete the over"
@@ -47,66 +47,62 @@ public class PlayerValidationService {
         }
     }
 
-    // ===================== CURRENT BATTERS VALIDATION =====================
+    // =====================================================
+    // 2️⃣ CURRENT BATTERS VALIDATION
+    // =====================================================
     public void validateBatters(BallByBall ball, MatchScore score) {
 
         String striker = score.getStrikerId();
         String nonStriker = score.getNonStrikerId();
 
         if (striker == null || nonStriker == null) {
-            throw new RuntimeException("Batters not set");
+            throw new RuntimeException("Striker / Non-striker not set");
         }
 
         if (striker.equals(nonStriker)) {
-            throw new RuntimeException(
-                    "Striker and non-striker cannot be same"
-            );
+            throw new RuntimeException("Striker and non-striker cannot be same");
         }
 
-        boolean isTeam1Batting
+        boolean team1Batting
                 = score.getBattingTeamId().equals(score.getTeam1Id());
 
-        List<String> playingXI = isTeam1Batting
+        List<String> playingXI = team1Batting
                 ? score.getTeam1PlayingXI()
                 : score.getTeam2PlayingXI();
 
-        List<String> outBatters = isTeam1Batting
+        List<String> outBatters = team1Batting
                 ? score.getTeam1OutBatters()
                 : score.getTeam2OutBatters();
 
-        // Must be in Playing XI
         if (!playingXI.contains(striker)) {
-            throw new RuntimeException(
-                    "Striker is not part of Playing XI"
-            );
+            throw new RuntimeException("Striker not in Playing XI");
         }
 
         if (!playingXI.contains(nonStriker)) {
-            throw new RuntimeException(
-                    "Non-striker is not part of Playing XI"
-            );
+            throw new RuntimeException("Non-striker not in Playing XI");
         }
 
-        // Must NOT be out
-        if (outBatters.contains(striker)) {
-            throw new RuntimeException(
-                    "Striker is already out"
-            );
-        }
+        // ✅ NORMAL BALL
+        if (!ball.isWicket()) {
 
-        if (outBatters.contains(nonStriker)) {
-            throw new RuntimeException(
-                    "Non-striker is already out"
-            );
-        }
+            if (outBatters.contains(striker)) {
+                throw new RuntimeException("Striker is already out");
+            }
 
-        // ❌ DO NOT check yetToBat here
+            if (outBatters.contains(nonStriker)) {
+                throw new RuntimeException("Non-striker is already out");
+            }
+        }
     }
 
-    // ===================== NEW BATTER VALIDATION (ON WICKET) =====================
+    // =====================================================
+    // 3️⃣ NEW BATTER VALIDATION (ON WICKET)
+    // =====================================================
     public void validateNewBatter(BallByBall ball, MatchScore score) {
 
-        // -------- NO WICKET --------
+        // -------------------------------------------------
+        // NO WICKET → new batter NOT allowed
+        // -------------------------------------------------
         if (!ball.isWicket()) {
             if (ball.getNewBatterId() != null) {
                 throw new RuntimeException(
@@ -115,9 +111,6 @@ public class PlayerValidationService {
             }
             return;
         }
-
-        String striker = score.getStrikerId();
-        String nonStriker = score.getNonStrikerId();
 
         boolean team1Batting
                 = score.getBattingTeamId().equals(score.getTeam1Id());
@@ -134,75 +127,90 @@ public class PlayerValidationService {
                 ? score.getTeam1OutBatters()
                 : score.getTeam2OutBatters();
 
-        // -------- RUN OUT VALIDATION --------
-        if ("RUN_OUT".equalsIgnoreCase(ball.getWicketType())) {
+        String wicketType = ball.getWicketType().toUpperCase();
+        String newBatter = ball.getNewBatterId();
 
-            if (ball.getOutBatterId() == null
-                    || ball.getRunOutEnd() == null) {
+        // -------------------------------------------------
+        // BASIC CHECKS
+        // -------------------------------------------------
+        if (newBatter == null || newBatter.isBlank()) {
+            throw new RuntimeException("New batter is mandatory after wicket");
+        }
+
+        if (!playingXI.contains(newBatter)) {
+            throw new RuntimeException("New batter must be from Playing XI");
+        }
+
+        if (!yetToBat.contains(newBatter)) {
+            throw new RuntimeException("New batter must be from Yet-To-Bat list");
+        }
+
+        if (outBatters.contains(newBatter)) {
+            throw new RuntimeException("New batter is already out");
+        }
+
+        // -------------------------------------------------
+        // RUN OUT
+        // -------------------------------------------------
+        if ("RUN_OUT".equals(wicketType)) {
+
+            String out = ball.getOutBatterId();
+
+            if (out == null || ball.getRunOutEnd() == null) {
                 throw new RuntimeException(
                         "Run out requires outBatterId and runOutEnd"
                 );
             }
 
-            String out = ball.getOutBatterId();
-
-            if (!out.equals(striker) && !out.equals(nonStriker)) {
+            if (!out.equals(score.getStrikerId())
+                    && !out.equals(score.getNonStrikerId())) {
                 throw new RuntimeException(
                         "Out batter must be striker or non-striker"
                 );
             }
+
+            if (newBatter.equals(out)) {
+                throw new RuntimeException(
+                        "New batter cannot be the out batter"
+                );
+            }
+
+            return; // ✅ VALID RUN OUT
         }
 
-        // -------- NORMAL WICKET --------
-        // striker auto-out → no outBatterId needed
-        // -------- NEW BATTER REQUIRED --------
-        String newBatter = ball.getNewBatterId();
-
-        if (newBatter == null || newBatter.isBlank()) {
+        // -------------------------------------------------
+        // NON-RUN OUT WICKETS (BOWLED, CAUGHT, LBW, STUMPED)
+        // -------------------------------------------------
+        // Only rule: new batter must NOT be the striker who got out
+        if (newBatter.equals(score.getStrikerId())) {
             throw new RuntimeException(
-                    "New batter is mandatory after wicket"
-            );
-        }
-
-        if (!playingXI.contains(newBatter)) {
-            throw new RuntimeException(
-                    "New batter must belong to Playing XI"
-            );
-        }
-
-        if (!yetToBat.contains(newBatter)) {
-            throw new RuntimeException(
-                    "New batter must be from Yet-To-Bat list"
-            );
-        }
-
-        if (outBatters.contains(newBatter)) {
-            throw new RuntimeException(
-                    "New batter is already out"
-            );
-        }
-
-        if (newBatter.equals(striker)
-                || newBatter.equals(nonStriker)) {
-            throw new RuntimeException(
-                    "New batter cannot be current batter"
+                    "New batter cannot be the out batter"
             );
         }
     }
 
-    public void validateAndSetNewBowler(BallByBall ball, MatchScore score) {
+    // =====================================================
+    // 4️⃣ NEW BOWLER VALIDATION (NEW OVER)
+    // =====================================================
+    public void validateAndSetNewBowler(
+            BallByBall ball,
+            MatchScore score
+    ) {
 
+        // Already set → nothing to do
         if (score.getCurrentBowlerId() != null) {
             return;
         }
 
-        if (ball.getNewBowlerId() == null || ball.getNewBowlerId().isBlank()) {
+        if (ball.getNewBowlerId() == null
+                || ball.getNewBowlerId().isBlank()) {
             throw new RuntimeException(
                     "New bowler must be provided at start of new over"
             );
         }
 
-        if (ball.getNewBowlerId().equals(score.getLastOverBowlerId())) {
+        if (ball.getNewBowlerId()
+                .equals(score.getLastOverBowlerId())) {
             throw new RuntimeException(
                     "Bowler cannot bowl consecutive overs"
             );
@@ -210,5 +218,4 @@ public class PlayerValidationService {
 
         score.setCurrentBowlerId(ball.getNewBowlerId());
     }
-
 }
