@@ -82,13 +82,27 @@ public class PlayerValidationService {
             throw new RuntimeException("Non-striker not in Playing XI");
         }
 
-        // ✅ NORMAL BALL
-        if (!ball.isWicket()) {
+        // ❌ Dead ball rules
+        if (ball.isBoundary() && ball.isWicket()) {
+            throw new RuntimeException(
+                    "Wicket cannot fall after boundary (dead ball)"
+            );
+        }
 
+        // ❌ No-ball rule
+        if ("NO_BALL".equalsIgnoreCase(ball.getExtraType())
+                && ball.isWicket()
+                && !"RUN_OUT".equalsIgnoreCase(ball.getWicketType())) {
+            throw new RuntimeException(
+                    "Only Run Out allowed on No Ball"
+            );
+        }
+
+        // ✅ Normal ball → both batters must be alive
+        if (!ball.isWicket()) {
             if (outBatters.contains(striker)) {
                 throw new RuntimeException("Striker is already out");
             }
-
             if (outBatters.contains(nonStriker)) {
                 throw new RuntimeException("Non-striker is already out");
             }
@@ -100,9 +114,9 @@ public class PlayerValidationService {
     // =====================================================
     public void validateNewBatter(BallByBall ball, MatchScore score) {
 
-        // -------------------------------------------------
-        // NO WICKET → new batter NOT allowed
-        // -------------------------------------------------
+        boolean isRunOut = "RUN_OUT".equalsIgnoreCase(ball.getWicketType());
+
+        // ================= NO WICKET AT ALL =================
         if (!ball.isWicket()) {
             if (ball.getNewBatterId() != null) {
                 throw new RuntimeException(
@@ -112,77 +126,58 @@ public class PlayerValidationService {
             return;
         }
 
-        boolean team1Batting
-                = score.getBattingTeamId().equals(score.getTeam1Id());
+        // ================= RUN OUT (ALLOWED EVEN ON WIDE / NO BALL) =================
+        if (isRunOut) {
 
-        List<String> playingXI = team1Batting
-                ? score.getTeam1PlayingXI()
-                : score.getTeam2PlayingXI();
+            String newBatter = ball.getNewBatterId();
 
-        List<String> yetToBat = team1Batting
-                ? score.getTeam1YetToBat()
-                : score.getTeam2YetToBat();
-
-        List<String> outBatters = team1Batting
-                ? score.getTeam1OutBatters()
-                : score.getTeam2OutBatters();
-
-        String wicketType = ball.getWicketType().toUpperCase();
-        String newBatter = ball.getNewBatterId();
-
-        // -------------------------------------------------
-        // BASIC CHECKS
-        // -------------------------------------------------
-        if (newBatter == null || newBatter.isBlank()) {
-            throw new RuntimeException("New batter is mandatory after wicket");
-        }
-
-        if (!playingXI.contains(newBatter)) {
-            throw new RuntimeException("New batter must be from Playing XI");
-        }
-
-        if (!yetToBat.contains(newBatter)) {
-            throw new RuntimeException("New batter must be from Yet-To-Bat list");
-        }
-
-        if (outBatters.contains(newBatter)) {
-            throw new RuntimeException("New batter is already out");
-        }
-
-        // -------------------------------------------------
-        // RUN OUT
-        // -------------------------------------------------
-        if ("RUN_OUT".equals(wicketType)) {
-
-            String out = ball.getOutBatterId();
-
-            if (out == null || ball.getRunOutEnd() == null) {
-                throw new RuntimeException(
-                        "Run out requires outBatterId and runOutEnd"
-                );
+            if (newBatter == null || newBatter.isBlank()) {
+                throw new RuntimeException("New batter is mandatory after run out");
             }
 
-            if (!out.equals(score.getStrikerId())
-                    && !out.equals(score.getNonStrikerId())) {
-                throw new RuntimeException(
-                        "Out batter must be striker or non-striker"
-                );
+            boolean team1Batting
+                    = score.getBattingTeamId().equals(score.getTeam1Id());
+
+            List<String> playingXI = team1Batting
+                    ? score.getTeam1PlayingXI()
+                    : score.getTeam2PlayingXI();
+
+            List<String> yetToBat = team1Batting
+                    ? score.getTeam1YetToBat()
+                    : score.getTeam2YetToBat();
+
+            List<String> outBatters = team1Batting
+                    ? score.getTeam1OutBatters()
+                    : score.getTeam2OutBatters();
+
+            if (!playingXI.contains(newBatter)) {
+                throw new RuntimeException("New batter must be from Playing XI");
             }
 
-            if (newBatter.equals(out)) {
+            if (!yetToBat.contains(newBatter)) {
+                throw new RuntimeException("New batter must be from Yet-To-Bat list");
+            }
+
+            if (outBatters.contains(newBatter)) {
+                throw new RuntimeException("New batter is already out");
+            }
+
+            if (newBatter.equals(ball.getOutBatterId())) {
                 throw new RuntimeException(
                         "New batter cannot be the out batter"
                 );
             }
 
-            return; // ✅ VALID RUN OUT
+            return; // ✅ RUN OUT IS VALID
         }
 
-        // -------------------------------------------------
-        // NON-RUN OUT WICKETS (BOWLED, CAUGHT, LBW, STUMPED)
-        // -------------------------------------------------
-        // Only rule: new batter must NOT be the striker who got out
-        if (newBatter.equals(score.getStrikerId())) {
+        // ================= OTHER WICKETS =================
+        // (Caught, Bowled, LBW etc — striker only)
+        if (ball.getNewBatterId() == null) {
+            throw new RuntimeException("New batter is mandatory after wicket");
+        }
+
+        if (ball.getNewBatterId().equals(score.getStrikerId())) {
             throw new RuntimeException(
                     "New batter cannot be the out batter"
             );

@@ -3,8 +3,10 @@ package com.cricriser.cricriser.league;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import lombok.AllArgsConstructor;
@@ -43,4 +45,8 @@ public class League {
     private Integer testDays;
 
     private String logoUrl;
+
+    @Transient
+    private List<Map<String, String>> teamDetails;
+
 }

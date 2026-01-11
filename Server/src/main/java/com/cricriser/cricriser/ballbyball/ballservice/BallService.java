@@ -143,6 +143,7 @@ public class BallService {
 
     public void normalizeWicketState(BallByBall ball) {
 
+        // ❌ DO NOT clear wicket just because ball is illegal
         if (!ball.isWicket()) {
             ball.setWicketType(null);
             ball.setOutBatterId(null);
@@ -150,23 +151,34 @@ public class BallService {
             return;
         }
 
+        if (ball.getWicketType() == null) {
+            throw new RuntimeException("wicketType is mandatory when isWicket is true");
+        }
+
         String wicketType = ball.getWicketType().toUpperCase();
         ball.setWicketType(wicketType);
 
-        // ✅ RUN OUT → outBatterId MUST come from request
+        // ✅ RUN OUT allowed on ANY delivery (legal or illegal)
         if ("RUN_OUT".equals(wicketType)) {
 
-            if (ball.getOutBatterId() == null) {
+            if (ball.getOutBatterId() == null || ball.getRunOutEnd() == null) {
                 throw new RuntimeException(
-                        "outBatterId is mandatory for Run Out"
+                        "outBatterId and runOutEnd are mandatory for Run Out"
                 );
             }
 
-            return; // 🚨 VERY IMPORTANT
+            return; // 🔥 NEVER clear wicket for RUN OUT
         }
 
-        // ✅ NON–RUN OUT → striker is ALWAYS out
-        ball.setOutBatterId(null); // will be set later from score
+        // ❌ OTHER WICKETS CANNOT HAPPEN ON ILLEGAL BALLS
+        if (!ball.isLegalBall()) {
+            throw new RuntimeException(
+                    wicketType + " cannot occur on illegal delivery"
+            );
+        }
+
+        // NON–RUN OUT → striker will be out later
+        ball.setOutBatterId(null);
         ball.setRunOutEnd(null);
     }
 

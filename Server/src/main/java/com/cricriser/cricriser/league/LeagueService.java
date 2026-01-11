@@ -7,6 +7,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -583,7 +584,27 @@ public class LeagueService {
 
     public Optional<League> getLeagueById(String leagueId) {
         getLoggedInAdminId();
-        return leagueRepository.findById(leagueId);
+
+        Optional<League> opt = leagueRepository.findById(leagueId);
+
+        opt.ifPresent(league -> {
+            if (league.getTeams() != null && !league.getTeams().isEmpty()) {
+
+                List<Team> teams = teamRepository.findAllById(league.getTeams());
+
+                List<Map<String, String>> teamDetails = teams.stream()
+                        .map(t -> Map.of(
+                        "id", t.getId(),
+                        "name", t.getName()
+                ))
+                        .toList();
+
+                // ADD NEW FIELD
+                league.setTeamDetails(teamDetails);
+            }
+        });
+
+        return opt;
     }
 
     public List<League> getAllLeagues() {
