@@ -1,114 +1,106 @@
-import { useState, useEffect } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { toast } from "sonner";
-import { Upload, X, Plus } from "lucide-react";
-import axios from "@/api/axios";
+import { useState, useEffect } from "react"
+import { useNavigate, useParams, useSearchParams } from "react-router-dom"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
+import { toast } from "sonner"
+import { Upload, X, Plus } from "lucide-react"
+import axios from "@/api/axios"
 
 export default function AddTeam() {
-  const navigate = useNavigate();
-  const { leagueId } = useParams();            // league from URL
-  const [searchParams] = useSearchParams();    // team from query
+  const navigate = useNavigate()
+  const { leagueId } = useParams()
+  const [searchParams] = useSearchParams()
 
-  const teamNameFromLeague = searchParams.get("teamName");
+  const teamNameFromLeague = searchParams.get("teamName")
 
   const [form, setForm] = useState({
     name: "",
     coach: "",
     captain: "",
     viceCaptain: "",
+    leagueId: leagueId,          // ✅ IMPORTANT
     squadPlayerIds: [],
-  });
+  })
 
-  const [playerInput, setPlayerInput] = useState("");
-  const [logo, setLogo] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [playerInput, setPlayerInput] = useState("")
+  const [logo, setLogo] = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [loading, setLoading] = useState(false)
 
   /* ================= PREFILL TEAM NAME ================= */
   useEffect(() => {
     if (teamNameFromLeague) {
-      setForm((p) => ({ ...p, name: teamNameFromLeague }));
+      setForm((p) => ({ ...p, name: teamNameFromLeague }))
     }
-  }, [teamNameFromLeague]);
+  }, [teamNameFromLeague])
 
-  const update = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const update = (k, v) => setForm((p) => ({ ...p, [k]: v }))
 
   /* ================= VALIDATION ================= */
   const validate = () => {
-    if (!form.name) return "Team name required";
-    if (!form.coach) return "Coach name required";
-    if (!form.captain) return "Captain name required";
-    if (!form.viceCaptain) return "Vice captain name required";
+    if (!form.name) return "Team name required"
+    if (!form.coach) return "Coach required"
+    if (!form.captain) return "Captain required"
+    if (!form.viceCaptain) return "Vice captain required"
 
     if (form.squadPlayerIds.length < 15 || form.squadPlayerIds.length > 18)
-      return "Squad must have 15–18 players";
+      return "Squad must have 15–18 players"
 
     if (!form.squadPlayerIds.includes(form.captain))
-      return "Captain must be in squad";
+      return "Captain must be in squad"
 
     if (!form.squadPlayerIds.includes(form.viceCaptain))
-      return "Vice captain must be in squad";
+      return "Vice captain must be in squad"
 
-    return null;
-  };
+    return null
+  }
 
   /* ================= ADD PLAYER ================= */
   const addPlayer = () => {
-    if (!playerInput.trim()) return;
+    const value = playerInput.trim()
+    if (!value) return
 
-    if (form.squadPlayerIds.includes(playerInput.trim())) {
-      toast.error("Player already added");
-      return;
+    if (form.squadPlayerIds.includes(value)) {
+      toast.error("Player already added")
+      return
     }
 
-    update("squadPlayerIds", [...form.squadPlayerIds, playerInput.trim()]);
-    setPlayerInput("");
-  };
+    update("squadPlayerIds", [...form.squadPlayerIds, value])
+    setPlayerInput("")
+  }
 
-  const removePlayer = (name) => {
+  const removePlayer = (id) => {
     update(
       "squadPlayerIds",
-      form.squadPlayerIds.filter((p) => p !== name)
-    );
-  };
+      form.squadPlayerIds.filter((p) => p !== id)
+    )
+  }
 
   /* ================= SUBMIT ================= */
   const handleSubmit = async () => {
-    const err = validate();
-    if (err) return toast.error(err);
+    const err = validate()
+    if (err) return toast.error(err)
 
     try {
-      setLoading(true);
+      setLoading(true)
 
-      const fd = new FormData();
-      fd.append("team", JSON.stringify(form));
-      if (logo) fd.append("logo", logo);
+      const fd = new FormData()
+      fd.append("team", JSON.stringify(form))
+      if (logo) fd.append("logo", logo)
 
-      const token = localStorage.getItem("token");
+      // ✅ CORRECT ENDPOINT
+      await axios.post("/api/teams/create", fd)
 
-      await axios.post(
-        `/api/leagues/${leagueId}/teams`,
-        fd,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-
-      toast.success("Team created successfully 🏏");
-      navigate(`/admin/leagues/${leagueId}`);
+      toast.success("Team created successfully 🏏")
+      navigate(`/admin/leagues/${leagueId}`)
     } catch (e) {
-      toast.error(e.response?.data?.error || "Creation failed");
+      toast.error(e.response?.data?.error || "Creation failed")
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -117,60 +109,42 @@ export default function AddTeam() {
           <h1 className="text-xl font-semibold">Create Team</h1>
           <Separator />
 
-          {/* TEAM NAME (READONLY FOR BILATERAL) */}
-          <div>
-            <label className="text-sm font-medium">Team Name</label>
-            <Input
-              value={form.name}
-              disabled={!!teamNameFromLeague}
-              placeholder="Enter team name"
-              onChange={(e) => update("name", e.target.value)}
-            />
-          </div>
+          <Input
+            placeholder="Team Name"
+            value={form.name}
+            disabled={!!teamNameFromLeague}
+            onChange={(e) => update("name", e.target.value)}
+          />
 
-          {/* COACH */}
-          <div>
-            <label className="text-sm font-medium">Coach Name</label>
-            <Input
-              placeholder="Enter coach name"
-              onChange={(e) => update("coach", e.target.value)}
-            />
-          </div>
+          <Input
+            placeholder="Coach Name"
+            onChange={(e) => update("coach", e.target.value)}
+          />
 
-          {/* CAPTAIN */}
-          <div>
-            <label className="text-sm font-medium">Captain Name</label>
-            <Input
-              placeholder="Enter captain name"
-              onChange={(e) => update("captain", e.target.value)}
-            />
-          </div>
+          <Input
+            placeholder="Captain Player ID"
+            onChange={(e) => update("captain", e.target.value)}
+          />
 
-          {/* VICE CAPTAIN */}
-          <div>
-            <label className="text-sm font-medium">Vice Captain Name</label>
-            <Input
-              placeholder="Enter vice captain name"
-              onChange={(e) => update("viceCaptain", e.target.value)}
-            />
-          </div>
+          <Input
+            placeholder="Vice Captain Player ID"
+            onChange={(e) => update("viceCaptain", e.target.value)}
+          />
 
           {/* SQUAD */}
           <div>
-            <label className="text-sm font-medium">Add Squad Players</label>
-
-            <div className="flex gap-2 mt-1">
+            <div className="flex gap-2">
               <Input
-                placeholder="Enter player name"
+                placeholder="Player ID"
                 value={playerInput}
                 onChange={(e) => setPlayerInput(e.target.value)}
               />
-              <Button onClick={addPlayer} type="button">
+              <Button type="button" onClick={addPlayer}>
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
 
-            <div className="flex flex-wrap gap-2 mt-3">
+            <div className="flex flex-wrap gap-2 mt-2">
               {form.squadPlayerIds.map((p) => (
                 <span
                   key={p}
@@ -187,37 +161,25 @@ export default function AddTeam() {
           </div>
 
           {/* LOGO */}
-          <div>
-            <label className="flex gap-2 text-sm cursor-pointer">
-              <Upload className="h-4 w-4" /> Upload Team Logo
-              <input
-                type="file"
-                hidden
-                accept="image/*"
-                onChange={(e) => {
-                  setLogo(e.target.files[0]);
-                  setPreview(URL.createObjectURL(e.target.files[0]));
-                }}
-              />
-            </label>
+          <label className="flex gap-2 text-sm cursor-pointer">
+            <Upload className="h-4 w-4" /> Upload Logo
+            <input
+              type="file"
+              hidden
+              accept="image/*"
+              onChange={(e) => {
+                setLogo(e.target.files[0])
+                setPreview(URL.createObjectURL(e.target.files[0]))
+              }}
+            />
+          </label>
 
-            {preview && (
-              <div className="relative w-28 h-28 mt-2">
-                <img
-                  src={preview}
-                  className="w-full h-full object-contain border"
-                />
-                <button
-                  onClick={() => {
-                    setLogo(null);
-                    setPreview(null);
-                  }}
-                >
-                  <X className="h-4 w-4 text-red-500" />
-                </button>
-              </div>
-            )}
-          </div>
+          {preview && (
+            <img
+              src={preview}
+              className="w-28 h-28 object-contain border"
+            />
+          )}
 
           <Button onClick={handleSubmit} disabled={loading}>
             {loading ? "Creating..." : "Create Team"}
@@ -225,5 +187,5 @@ export default function AddTeam() {
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }

@@ -48,10 +48,7 @@ export default function AppRoutes() {
         <Route path="teams/:name" element={<TeamDetails />} />
 
         {/* -------- CREATE TEAM INSIDE LEAGUE -------- */}
-        <Route
-          path="leagues/:leagueId/teams/create"
-          element={<AddTeam />}
-        />
+        <Route path="leagues/:leagueId/teams/create" element={<AddTeam />} />
       </Route>
     </Routes>
   );
