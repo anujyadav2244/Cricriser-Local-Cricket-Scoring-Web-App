@@ -71,9 +71,4 @@ public class WicketHandlingService {
         );
     }
 
-    private void swap(MatchScore score) {
-        String temp = score.getStrikerId();
-        score.setStrikerId(score.getNonStrikerId());
-        score.setNonStrikerId(temp);
-    }
 }

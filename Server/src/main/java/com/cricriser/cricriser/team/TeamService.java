@@ -12,6 +12,7 @@ import com.cricriser.cricriser.cloudinary.CloudinaryService;
 import com.cricriser.cricriser.league.League;
 import com.cricriser.cricriser.league.LeagueRepository;
 import com.cricriser.cricriser.player.Player;
+import com.cricriser.cricriser.player.PlayerCardDto;
 import com.cricriser.cricriser.player.PlayerRepository;
 import com.cricriser.cricriser.security.JwtBlacklistService;
 import com.cricriser.cricriser.security.JwtUtil;
@@ -36,24 +37,25 @@ public class TeamService {
     private ObjectMapper objectMapper;
 
     // ================= CREATE TEAM =================
-    public Team createTeam(String token, String teamJson, MultipartFile logoFile) throws Exception {
+    public Team createTeam(String token, String leagueId, String teamJson, MultipartFile logoFile) throws Exception {
 
         String adminId = validateToken(token);
         Team team = objectMapper.readValue(teamJson, Team.class);
 
-        League league = leagueRepository.findById(team.getLeagueId())
+        // FORCE league from path
+        team.setLeagueId(leagueId);
+
+        League league = leagueRepository.findById(leagueId)
                 .orElseThrow(() -> new Exception("League not found"));
 
         if (!league.getAdminId().equalsIgnoreCase(adminId)) {
             throw new Exception("Unauthorized");
         }
 
-        if (teamRepository.existsByLeagueIdAndNameIgnoreCase(
-                team.getLeagueId(), team.getName())) {
-            throw new Exception("Team name already exists");
+        if (teamRepository.existsByLeagueIdAndNameIgnoreCase(leagueId, team.getName())) {
+            throw new Exception("Team already exists in this league");
         }
 
-        // 🔹 CHANGED
         validateTeam(team, league);
 
         if (logoFile != null && !logoFile.isEmpty()) {
@@ -65,7 +67,6 @@ public class TeamService {
         league.getTeams().add(savedTeam.getId());
         leagueRepository.save(league);
 
-        // 🔹 CHANGED
         assignTeamToPlayers(savedTeam, league);
 
         return savedTeam;
@@ -145,98 +146,85 @@ public class TeamService {
     }
 
     // ================= VALIDATION =================
-    private void validateTeam(Team team, League league) throws Exception {
+    private void validateTeam(Team team, League league) {
 
-        if (team.getLeagueId() == null) {
-            throw new Exception("League ID missing");
+        if (team.getSquadPlayerIds() == null) {
+            throw new RuntimeException("Squad is required");
         }
 
-        if (team.getSquadPlayerIds() == null || team.getSquadPlayerIds().size() < 11) {
-            throw new Exception("Minimum 11 players required");
+        int size = team.getSquadPlayerIds().size();
+        if (size < 15 || size > 18) {
+            throw new RuntimeException("Squad must have 15–18 players");
         }
 
         if (team.getCoach() == null || team.getCoach().isBlank()) {
-            throw new Exception("Coach required");
+            throw new RuntimeException("Coach required");
         }
 
         if (team.getCaptain() == null || team.getViceCaptain() == null) {
-            throw new Exception("Captain & Vice Captain required");
+            throw new RuntimeException("Captain & Vice Captain required");
         }
 
         if (team.getCaptain().equals(team.getViceCaptain())) {
-            throw new Exception("Captain and Vice Captain cannot be same");
+            throw new RuntimeException("Captain and Vice Captain cannot be same");
         }
 
         long distinct = team.getSquadPlayerIds().stream().distinct().count();
         if (distinct != team.getSquadPlayerIds().size()) {
-            throw new Exception("Duplicate players in squad");
+            throw new RuntimeException("Duplicate players in squad");
         }
 
-        // 🔹 CHANGED
         validatePlayers(team, league);
     }
 
     // ================= PLAYER VALIDATION =================
     private void validatePlayers(Team team, League league) {
 
-        // convert league dates once
-        LocalDateTime leagueStart
-                = league.getStartDate().toInstant()
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDateTime();
+        LocalDateTime leagueStart = league.getStartDate().toInstant()
+                .atZone(ZoneId.systemDefault()).toLocalDateTime();
 
-        LocalDateTime leagueEnd
-                = league.getEndDate().toInstant()
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDateTime();
+        LocalDateTime leagueEnd = league.getEndDate().toInstant()
+                .atZone(ZoneId.systemDefault()).toLocalDateTime();
 
-        for (String playerId : team.getSquadPlayerIds()) {
+        for (String pid : team.getSquadPlayerIds()) {
 
-            Player player = playerRepository.findById(playerId)
-                    .orElseThrow(() -> new RuntimeException("Invalid player ID: " + playerId));
+            Player p = playerRepository.findById(pid)
+                    .orElseThrow(() -> new RuntimeException("Invalid player ID: " + pid));
 
-            if (player.getActiveLeagueId() != null) {
-
-                boolean overlap
-                        = !(leagueEnd.isBefore(player.getLeagueStartDate())
-                        || leagueStart.isAfter(player.getLeagueEndDate()));
+            if (p.getActiveLeagueId() != null) {
+                boolean overlap = !(leagueEnd.isBefore(p.getLeagueStartDate())
+                        || leagueStart.isAfter(p.getLeagueEndDate()));
 
                 if (overlap) {
-                    throw new RuntimeException(
-                            player.getName() + " is already playing in another league during this period");
+                    throw new RuntimeException(p.getName()
+                            + " already plays in another league during this time");
                 }
             }
         }
 
         if (!team.getSquadPlayerIds().contains(team.getCaptain())
                 || !team.getSquadPlayerIds().contains(team.getViceCaptain())) {
-            throw new RuntimeException("Captain & Vice must be in squad");
+            throw new RuntimeException("Captain & Vice Captain must be in squad");
         }
-    }
+    }    // ================= PLAYER LINK =================
 
-    // ================= PLAYER LINK =================
     private void assignTeamToPlayers(Team team, League league) {
 
-        // 🔹 Convert Date → LocalDateTime ONCE
-        LocalDateTime leagueStart
-                = league.getStartDate().toInstant()
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDateTime();
+        LocalDateTime leagueStart = league.getStartDate().toInstant()
+                .atZone(ZoneId.systemDefault()).toLocalDateTime();
 
-        LocalDateTime leagueEnd
-                = league.getEndDate().toInstant()
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDateTime();
+        LocalDateTime leagueEnd = league.getEndDate().toInstant()
+                .atZone(ZoneId.systemDefault()).toLocalDateTime();
 
         for (String pid : team.getSquadPlayerIds()) {
 
             Player p = playerRepository.findById(pid)
-                    .orElseThrow(() -> new RuntimeException("Invalid Player ID: " + pid));
+                    .orElseThrow(() -> new RuntimeException("Invalid Player ID"));
 
             p.setCurrentTeamId(team.getId());
             p.setActiveLeagueId(league.getId());
-            p.setLeagueStartDate(leagueStart); // ✅ LocalDateTime
-            p.setLeagueEndDate(leagueEnd);     // ✅ LocalDateTime
+            p.setLeagueStartDate(leagueStart);
+            p.setLeagueEndDate(leagueEnd);
 
             playerRepository.save(p);
         }
@@ -293,6 +281,49 @@ public class TeamService {
         return teamRepository.findAll();
     }
 
+    public TeamDetailsResponse getTeamByName(String name) {
+
+        Team team = teamRepository.findByNameIgnoreCase(name)
+                .orElseThrow(() -> new RuntimeException("Team not found"));
+
+        League league = leagueRepository.findById(team.getLeagueId())
+                .orElseThrow(() -> new RuntimeException("League not found"));
+
+        Player captain = playerRepository.findById(team.getCaptain())
+                .orElseThrow(() -> new RuntimeException("Captain not found"));
+
+        Player viceCaptain = playerRepository.findById(team.getViceCaptain())
+                .orElseThrow(() -> new RuntimeException("Vice captain not found"));
+
+        List<PlayerCardDto> players = team.getSquadPlayerIds()
+                .stream()
+                .map(pid -> {
+                    Player p = playerRepository.findById(pid)
+                            .orElseThrow(() -> new RuntimeException("Player not found"));
+                    return new PlayerCardDto(
+                            p.getId(),
+                            p.getName(),
+                            p.getRole(),
+                            p.getPhotoUrl()
+                    );
+                })
+                .toList();
+
+        return new TeamDetailsResponse(
+                team.getId(),
+                team.getName(),
+                league.getName(),
+                team.getCoach(),
+                captain.getName(),
+                viceCaptain.getName(),
+                players
+        );
+    }
+
+    public List<Team> getTeamsByLeague(String leagueId) {
+        return teamRepository.findByLeagueId(leagueId);
+    }
+    
     // ================= TOKEN =================
     private String validateToken(String token) throws Exception {
 

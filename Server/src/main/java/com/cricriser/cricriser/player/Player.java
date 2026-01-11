@@ -48,6 +48,7 @@ public class Player {
     private String battingStyle;
     private String bowlingType;
     private String bowlingStyle;
+    private String photoUrl;
 
     // Only 1 team at a time
     private String currentTeamId;

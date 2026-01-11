@@ -1,5 +1,7 @@
 package com.cricriser.cricriser.ballbyball.ballservice;
 
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 
 import com.cricriser.cricriser.ballbyball.BallByBall;
@@ -14,10 +16,7 @@ public class BattingStateService {
             return;
         }
 
-        String wicketType = ball.getWicketType();
-
-        // ❌ RETIRED HURT → NOT OUT
-        if ("RETIRED_HURT".equalsIgnoreCase(wicketType)) {
+        if ("RETIRED_HURT".equalsIgnoreCase(ball.getWicketType())) {
             return;
         }
 
@@ -25,39 +24,44 @@ public class BattingStateService {
         String newBatterId = ball.getNewBatterId();
 
         if (outBatterId == null || newBatterId == null) {
-            throw new RuntimeException("outBatterId and newBatterId are mandatory");
+            throw new RuntimeException(
+                    "outBatterId and newBatterId are mandatory"
+            );
         }
 
-        // =================================================
-        // 1️⃣ MOVE OUT BATTER → OUT LIST
-        // =================================================
-        if (score.getBattingTeamId().equals(score.getTeam1Id())) {
-            score.getTeam1OutBatters().add(outBatterId);
-        } else {
-            score.getTeam2OutBatters().add(outBatterId);
+        boolean team1Batting
+                = score.getBattingTeamId().equals(score.getTeam1Id());
+
+        List<String> outBatters = team1Batting
+                ? score.getTeam1OutBatters()
+                : score.getTeam2OutBatters();
+
+        List<String> yetToBat = team1Batting
+                ? score.getTeam1YetToBat()
+                : score.getTeam2YetToBat();
+
+        // ✅ mark out batter once
+        if (!outBatters.contains(outBatterId)) {
+            outBatters.add(outBatterId);
         }
 
-        // =================================================
-        // 2️⃣ REMOVE *NEW BATTER* FROM YET-TO-BAT
-        // =================================================
-        if (score.getBattingTeamId().equals(score.getTeam1Id())) {
-            score.getTeam1YetToBat().remove(newBatterId);
-        } else {
-            score.getTeam2YetToBat().remove(newBatterId);
-        }
+        // ✅ remove new batter from yet-to-bat
+        yetToBat.remove(newBatterId);
 
-        // =================================================
-        // 3️⃣ REPLACE BATTER (NO STRIKE ROTATION HERE)
-        // =================================================
-        replaceBatter(ball, score, newBatterId);
+        replaceBatter(ball, score, outBatterId, newBatterId);
     }
 
+    // =====================================================
+    // 🔥 FINAL & CORRECT RUN-OUT LOGIC
+    // =====================================================
     private void replaceBatter(
             BallByBall ball,
             MatchScore score,
+            String outBatterId,
             String newBatterId
     ) {
-        String outBatterId = ball.getOutBatterId();
+
+        boolean lastBallOfOver = ball.isOverCompleted();
 
         String striker = score.getStrikerId();
         String nonStriker = score.getNonStrikerId();
@@ -65,26 +69,45 @@ public class BattingStateService {
         // ================= RUN OUT =================
         if ("RUN_OUT".equalsIgnoreCase(ball.getWicketType())) {
 
+            String survivingBatter;
+
+            // 🔴 Identify surviving batter
             if (outBatterId.equals(striker)) {
-                // striker got out → new batter takes striker position
-                score.setStrikerId(newBatterId);
-
+                survivingBatter = nonStriker;
             } else if (outBatterId.equals(nonStriker)) {
-                // non-striker got out → new batter takes non-striker position
-                score.setNonStrikerId(newBatterId);
-
+                survivingBatter = striker;
             } else {
                 throw new RuntimeException(
-                        "Out batter is neither striker nor non-striker"
+                        "outBatterId is not on crease"
                 );
             }
 
-            return; // 🚫 NO strike rotation here
+            // 🔴 Place batters strictly by runOutEnd
+            if ("STRIKER".equalsIgnoreCase(ball.getRunOutEnd())) {
+                score.setStrikerId(newBatterId);
+                score.setNonStrikerId(survivingBatter);
+            } else if ("NON_STRIKER".equalsIgnoreCase(ball.getRunOutEnd())) {
+                score.setNonStrikerId(newBatterId);
+                score.setStrikerId(survivingBatter);
+            } else {
+                throw new RuntimeException("Invalid runOutEnd");
+            }
+
+            // 🔁 Last ball → swap AFTER placement
+            if (lastBallOfOver) {
+                swap(score);
+            }
+
+            return;
         }
 
-        // ================= OTHER WICKETS =================
-        // Bowled, Caught, LBW, Stumped → striker always out
+        // ================= NON–RUN OUT WICKETS =================
+        // Striker always out
         score.setStrikerId(newBatterId);
+
+        if (lastBallOfOver) {
+            swap(score);
+        }
     }
 
     private void swap(MatchScore score) {
@@ -92,5 +115,4 @@ public class BattingStateService {
         score.setStrikerId(score.getNonStrikerId());
         score.setNonStrikerId(temp);
     }
-
 }

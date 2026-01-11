@@ -27,28 +27,27 @@ public class TeamController {
     private TeamService teamService;
 
     // ================= CREATE TEAM =================
-    @PostMapping(value = "/create", consumes = { "multipart/form-data" })
+    @PostMapping(value = "/create", consumes = {"multipart/form-data"})
     public ResponseEntity<?> createTeam(
             @RequestHeader("Authorization") String token,
+            @PathVariable String leagueId,
             @RequestPart("team") String teamJson,
             @RequestPart(value = "logo", required = false) MultipartFile logoFile) {
 
         try {
-            Team savedTeam = teamService.createTeam(token, teamJson, logoFile);
+            Team savedTeam = teamService.createTeam(token, leagueId, teamJson, logoFile);
             return ResponseEntity.status(HttpStatus.CREATED).body(savedTeam);
 
         } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            return ResponseEntity.badRequest()
                     .body(Map.of("error", e.getMessage()));
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage()));
         }
     }
-
     // ================= UPDATE TEAM =================
-    @PutMapping(value = "/update/{id}", consumes = { "multipart/form-data" })
+    @PutMapping(value = "/update/{id}", consumes = {"multipart/form-data"})
     public ResponseEntity<?> updateTeam(
             @RequestHeader("Authorization") String token,
             @PathVariable String id,
@@ -62,8 +61,7 @@ public class TeamController {
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -82,8 +80,7 @@ public class TeamController {
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -101,8 +98,7 @@ public class TeamController {
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage()));
         }
@@ -116,6 +112,17 @@ public class TeamController {
             Team team = teamService.getTeamById(id);
             return ResponseEntity.ok(team);
 
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ================= GET TEAM BY NAME =================
+    @GetMapping("/name/{name}")
+    public ResponseEntity<?> getTeamByName(@PathVariable String name) {
+        try {
+            return ResponseEntity.ok(teamService.getTeamByName(name));
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", e.getMessage()));

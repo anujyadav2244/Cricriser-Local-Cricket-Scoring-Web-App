@@ -41,7 +41,7 @@ public class BallByBall {
     private boolean overCompleted;
 
     // Wicket info
-    private boolean isWicket;
+    private Boolean isWicket;
     private String wicketType;
     private String outBatterId;
     private String newBatterId;
@@ -76,5 +76,8 @@ public class BallByBall {
 
     private int runningRuns; // runs completed by batters
 
+    public boolean isWicket() {
+        return Boolean.TRUE.equals(isWicket);
+    }
 
 }

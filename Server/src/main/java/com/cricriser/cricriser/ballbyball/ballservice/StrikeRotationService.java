@@ -10,22 +10,12 @@ public class StrikeRotationService {
 
     public void rotateStrike(BallByBall ball, MatchScore score) {
 
-        // 🚫 NO STRIKE ROTATION ON ANY WICKET EXCEPT RUN OUT
-        if (ball.isWicket() && !"RUN_OUT".equalsIgnoreCase(ball.getWicketType())) {
-
-            // Only over-end swap is allowed
-            if (ball.isOverCompleted()) {
-                swap(score);
-            }
-            return;
-        }
-
-        // 🚫 RUN OUT handled separately
+        // ❌ Run-out handled completely elsewhere
         if ("RUN_OUT".equalsIgnoreCase(ball.getWicketType())) {
             return;
         }
 
-        // 🚫 Boundary = dead ball (no mid-ball rotation)
+        // ❌ No rotation on dead ball boundary
         if (ball.isBoundary()) {
             if (ball.isOverCompleted()) {
                 swap(score);
@@ -33,23 +23,20 @@ public class StrikeRotationService {
             return;
         }
 
-        // ================= RUN ROTATION =================
         int runsForRotation = 0;
 
-        // BAT RUNS (ignore wides)
+        // Bat runs (includes NO BALL bat runs)
         if (!"WIDE".equalsIgnoreCase(ball.getExtraType())) {
             runsForRotation += ball.getRuns();
         }
 
-        // BYES / LEG BYES
+        // Running runs (byes / leg byes)
         runsForRotation += ball.getRunningRuns();
 
-        // 🔁 Odd runs → swap
         if (runsForRotation % 2 == 1) {
             swap(score);
         }
 
-        // 🔁 Over end → swap
         if (ball.isOverCompleted()) {
             swap(score);
         }

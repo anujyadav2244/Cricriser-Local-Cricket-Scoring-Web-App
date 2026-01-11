@@ -1,17 +1,9 @@
-import { useState } from "react"
-
 import {
   Sheet,
   SheetContent,
 } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu"
 
 import {
   LayoutDashboard,
@@ -22,9 +14,6 @@ import {
   User,
   LogOut,
   Key,
-  Plus,
-  Pencil,
-  Trash2,
 } from "lucide-react"
 
 import { useAuthStore } from "@/store/auth.store"
@@ -33,8 +22,6 @@ import { useAuthStore } from "@/store/auth.store"
 
 export default function AdminSidebar({ open, onClose }) {
   const logout = useAuthStore((s) => s.logout)
-
-  const [leagueMenuOpen, setLeagueMenuOpen] = useState(false)
 
   const handleLogout = () => {
     logout()
@@ -63,54 +50,12 @@ export default function AdminSidebar({ open, onClose }) {
             href="/admin/dashboard"
           />
 
-          {/* ========== LEAGUES (HOVER + CLICK MENU) ========== */}
-          <DropdownMenu
-            open={leagueMenuOpen}
-            onOpenChange={setLeagueMenuOpen}
-          >
-            <div
-              onMouseEnter={() => setLeagueMenuOpen(true)}
-              onMouseLeave={() => setLeagueMenuOpen(false)}
-            >
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
-                >
-                  <Trophy className="h-4 w-4" />
-                  Leagues
-                </Button>
-              </DropdownMenuTrigger>
-
-              <DropdownMenuContent
-                side="right"
-                align="start"
-                className="bg-slate-900 border border-slate-800 text-slate-200"
-              >
-                <DropdownMenuItem
-                  onClick={() => (window.location.href = "/admin/leagues/create")}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create League
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  onClick={() => (window.location.href = "/admin/leagues")}
-                >
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Update League
-                </DropdownMenuItem>
-
-                <DropdownMenuItem
-                  className="text-red-500 focus:text-red-500"
-                  onClick={() => (window.location.href = "/admin/leagues")}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete League
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </div>
-          </DropdownMenu>
+          {/* ✅ LEAGUES (DIRECT NAVIGATION) */}
+          <SidebarItem
+            icon={Trophy}
+            label="Leagues"
+            href="/admin/leagues"
+          />
 
           <SidebarItem icon={Users} label="Teams" href="/admin/teams" />
           <SidebarItem icon={CalendarDays} label="Matches" href="/admin/matches" />
@@ -139,7 +84,7 @@ export default function AdminSidebar({ open, onClose }) {
   )
 }
 
-/* ===================== HELPER COMPONENT ===================== */
+/* ===================== HELPER ===================== */
 
 function SidebarItem({ icon: Icon, label, href }) {
   return (

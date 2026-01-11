@@ -24,7 +24,7 @@ export function LoginForm() {
     try {
       const data = await loginAdmin({ email, password });
       setAuth(data.token, data);
-      window.location.href = "/dashboard";
+      window.location.href = "/admin";
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");
     } finally {

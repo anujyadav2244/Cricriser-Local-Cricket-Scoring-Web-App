@@ -27,54 +27,49 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 
         http
-            // ✅ DISABLE CSRF (JWT BASED)
-            .csrf(csrf -> csrf.disable())
-
-            // ✅ ENABLE CORS
-            .cors(withDefaults())
-
-            // ✅ STATELESS SESSION
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-            )
-
-            // ✅ AUTHORIZATION RULES
-            .authorizeHttpRequests(auth -> auth
+                // ❌ CSRF NOT NEEDED (JWT)
+                .csrf(csrf -> csrf.disable())
+                // ✅ ENABLE CORS (uses CorsConfig bean)
+                .cors(withDefaults())
+                // ❌ STATELESS SESSION
+                .sessionManagement(session
+                        -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
+                // ✅ AUTHORIZATION
+                .authorizeHttpRequests(auth -> auth
+                // ⭐ THIS FIXES YOUR 403 OPTIONS ERROR
+                .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**")
+                .permitAll()
+                // PUBLIC ENDPOINTS
                 .requestMatchers(
-                    "/api/admin/signup",
-                    "/api/admin/login",
-                    "/api/admin/verify-otp",
-                    "/api/admin/forgot-password",
-                    "/api/admin/verify-forgot-otp",
-
-                    "/api/player/signup",
-                    "/api/player/login",
-                    "/api/player/verify-otp",
-                    "/api/player/forgot-password",
-                    "/api/player/verify-forgot-otp"
+                        "/api/admin/signup",
+                        "/api/admin/login",
+                        "/api/admin/verify-otp",
+                        "/api/admin/forgot-password",
+                        "/api/admin/verify-forgot-otp",
+                        "/api/player/signup",
+                        "/api/player/login",
+                        "/api/player/verify-otp",
+                        "/api/player/forgot-password",
+                        "/api/player/verify-forgot-otp"
                 ).permitAll()
-
-                // EVERYTHING ELSE NEEDS LOGIN
+                // EVERYTHING ELSE AUTHENTICATED
                 .anyRequest().authenticated()
-            )
-
-            // ✅ JWT FILTER
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                )
+                // JWT FILTER
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    // ✅ PASSWORD ENCODER
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    // ✅ AUTH MANAGER
     @Bean
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration configuration) throws Exception {
-
         return configuration.getAuthenticationManager();
     }
 }
