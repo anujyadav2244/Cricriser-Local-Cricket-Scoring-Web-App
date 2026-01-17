@@ -1,4 +1,4 @@
-import { ForgotPasswordOtpForm } from "@/components/auth/ForgotPasswordOtpForm"
+import ForgotPasswordOtpForm from "@/components/auth/ForgotPasswordOtpForm"
 
 ForgotPasswordOtpForm
 export default function ForgotPasswordOtp() {

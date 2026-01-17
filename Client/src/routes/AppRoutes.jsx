@@ -1,9 +1,11 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "@/pages/auth/Login";
 import Register from "@/pages/auth/Register";
 import VerifySignupOtp from "@/pages/auth/VerifySignupOtp";
 import ForgotPasswordOtp from "@/pages/auth/ForgotPasswordOtp";
+import VerifyForgotOtp from "@/pages/auth/VerifyForgotOtp";
+import ResetPassword from "@/pages/auth/ResetPassword";
 
 import AdminLayout from "@/components/admin-layout/AdminLayout";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
@@ -20,6 +22,12 @@ import ManageTeams from "@/pages/admin/Team/Teams";
 import TeamDetails from "@/pages/admin/Team/TeamDetails";
 import AddTeam from "@/pages/admin/Team/CreateTeam";
 
+/* ================= AUTH GUARD ================= */
+const ProtectedRoute = ({ children }) => {
+  const token = localStorage.getItem("token");
+  return token ? children : <Navigate to="/login" replace />;
+};
+
 export default function AppRoutes() {
   return (
     <Routes>
@@ -27,14 +35,24 @@ export default function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Register />} />
       <Route path="/verify-otp" element={<VerifySignupOtp />} />
-      <Route
-        path="/forgot-password/verify-otp"
-        element={<ForgotPasswordOtp />}
-      />
 
-      {/* ================= ADMIN ROUTES ================= */}
-      <Route path="/admin" element={<AdminLayout />}>
+      {/* FORGOT PASSWORD FLOW */}
+      <Route path="/forgot-password" element={<ForgotPasswordOtp />} />
+      <Route path="/forgot-password/verify-otp" element={<VerifyForgotOtp />} />
+
+      {/* ================= ADMIN (PROTECTED) ================= */}
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route path="dashboard" element={<AdminDashboard />} />
+
+        {/* 🔐 RESET PASSWORD (LOGGED IN ONLY) */}
+        <Route path="reset-password" element={<ResetPassword />} />
 
         {/* -------- LEAGUES -------- */}
         <Route path="leagues" element={<Leagues />} />
@@ -43,11 +61,9 @@ export default function AppRoutes() {
         <Route path="leagues/update/:id" element={<UpdateLeague />} />
         <Route path="leagues/delete/:id" element={<DeleteLeague />} />
 
-        {/* -------- TEAMS (GLOBAL VIEW ONLY) -------- */}
+        {/* -------- TEAMS -------- */}
         <Route path="teams" element={<ManageTeams />} />
         <Route path="teams/:name" element={<TeamDetails />} />
-
-        {/* -------- CREATE TEAM INSIDE LEAGUE -------- */}
         <Route path="leagues/:leagueId/teams/create" element={<AddTeam />} />
       </Route>
     </Routes>

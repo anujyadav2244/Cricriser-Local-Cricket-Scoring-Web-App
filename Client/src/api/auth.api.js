@@ -48,3 +48,7 @@ export const verifyForgotOtp = async ({ email, otp, newPassword }) => {
   })
   return res.data
 }
+
+export const resetPassword = (data) => {
+  return axios.put("/api/admin/reset-password", data);
+};

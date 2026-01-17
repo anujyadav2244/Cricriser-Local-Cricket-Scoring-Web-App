@@ -1,46 +1,28 @@
 import { useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
+import { forgotPassword } from "@/api/auth.api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@/components/ui/input-otp"
-import { verifyForgotOtp } from "@/api/auth.api"
 
-export function ForgotPasswordOtpForm() {
-  const [searchParams] = useSearchParams()
-  const email = searchParams.get("email")
-
-  const [otp, setOtp] = useState("")
-  const [newPassword, setNewPassword] = useState("")
+export default function ForgotPasswordOtpForm() {
+  const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
 
-    if (otp.length !== 6) {
-      setError("Please enter the 6-digit OTP")
-      return
-    }
-
-    if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters")
-      return
-    }
-
     try {
       setLoading(true)
-      await verifyForgotOtp({ email, otp, newPassword })
+      await forgotPassword(email)
 
-      // Success → back to login
-      window.location.href = "/login"
+      // ✅ CORRECT NAVIGATION
+      navigate(`/verify-forgot-otp?email=${encodeURIComponent(email)}`)
     } catch (err) {
-      setError(err.response?.data?.error || "OTP verification failed")
+      setError(err.response?.data?.error || "Failed to send OTP")
     } finally {
       setLoading(false)
     }
@@ -49,58 +31,23 @@ export function ForgotPasswordOtpForm() {
   return (
     <Card className="w-full max-w-md bg-white">
       <CardContent className="p-6 space-y-6">
-        <div className="text-center space-y-1">
-          <h1 className="text-2xl font-bold text-slate-900">
-            Reset Password
-          </h1>
-          <p className="text-slate-500 text-sm">
-            Enter the OTP sent to
-          </p>
-          <p className="text-slate-700 text-sm font-medium">
-            {email}
-          </p>
-        </div>
+        <h1 className="text-2xl font-bold text-center">Forgot Password</h1>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* OTP INPUT */}
-          <div className="flex justify-center">
-            <InputOTP maxLength={6} value={otp} onChange={setOtp}>
-              <InputOTPGroup>
-                <InputOTPSlot index={0} />
-                <InputOTPSlot index={1} />
-                <InputOTPSlot index={2} />
-                <InputOTPSlot index={3} />
-                <InputOTPSlot index={4} />
-                <InputOTPSlot index={5} />
-              </InputOTPGroup>
-            </InputOTP>
-          </div>
-
-          <p className="text-xs text-slate-500 text-center">
-            OTP is valid for <span className="font-medium">10 minutes</span>
-          </p>
-
-          {/* NEW PASSWORD */}
+        <form onSubmit={handleSubmit} className="space-y-4">
           <Input
-            type="password"
-            placeholder="New password"
+            type="email"
+            placeholder="Enter registered email"
             required
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
 
           {error && (
-            <p className="text-sm text-red-500 text-center">
-              {error}
-            </p>
+            <p className="text-sm text-red-500 text-center">{error}</p>
           )}
 
-          <Button
-            type="submit"
-            className="w-full bg-orange-500 hover:bg-orange-600"
-            disabled={loading}
-          >
-            {loading ? "Updating password..." : "Update Password"}
+          <Button className="w-full" disabled={loading}>
+            {loading ? "Sending OTP..." : "Send OTP"}
           </Button>
         </form>
       </CardContent>

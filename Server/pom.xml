@@ -9,11 +9,11 @@
 		<relativePath/>
 		<!-- lookup parent from repository -->
 	</parent>
-	<groupId>com.cricbook</groupId>
-	<artifactId>cricbook</artifactId>
+	<groupId>com.cricriser</groupId>
+	<artifactId>cricriser</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>Cricbook</name>
-	<description>Local cricket tournament scoring web app</description>
+	<name>Cricriser</name>
+	<description>Local cricket tournament scoring platform</description>
 	<url/>
 	<licenses>
 		<license/>
